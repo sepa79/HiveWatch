@@ -97,6 +97,9 @@ done
 require_tools
 ensure_network
 
+echo "Syncing versions from pom.xml..."
+./tools/sync-versions.sh
+
 if $NO_DOCKER && $CLEAN_STACK; then
   echo "--clean cannot be used with --no-docker." >&2
   exit 1
