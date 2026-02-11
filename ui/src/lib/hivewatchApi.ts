@@ -552,6 +552,17 @@ export async function renameAdminEnvironment(
   )
 }
 
+export async function deleteAdminEnvironment(environmentId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`/api/v1/admin/environments/${encodeURIComponent(environmentId)}`, {
+    method: 'DELETE',
+    signal,
+    headers: withDevAuthHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+}
+
 export async function fetchUserEnvironmentVisibility(
   userId: string,
   signal?: AbortSignal,

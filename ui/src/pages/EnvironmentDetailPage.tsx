@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   createActuatorTarget,
   createExpectedSetTemplate,
@@ -52,10 +52,11 @@ type LoadState =
     }
   | { kind: 'error'; message: string }
 
-export type EnvironmentDetailView = 'overview' | 'expected-sets' | 'topology' | 'templates'
+export type EnvironmentDetailView = 'overview' | 'expected-sets' | 'templates' | 'topology'
 
 export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView }) {
   const params = useParams()
+  const navigate = useNavigate()
   const environmentId = params.environmentId ?? ''
   const { state: auth } = useAuth()
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
@@ -110,8 +111,8 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
     port: 8080,
     profile: 'payments',
     connectTimeoutMs: 1500,
-      requestTimeoutMs: 5000,
-    })
+    requestTimeoutMs: 5000,
+  })
 
   const [serverForm, setServerForm] = useState<ServerCreateRequest>({ name: '' })
 
@@ -179,13 +180,13 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
     const suffix = (() => {
       switch (view) {
         case 'overview':
-          return 'Overview'
+          return 'Environment'
         case 'expected-sets':
           return 'Expected sets'
-        case 'topology':
-          return 'Topology'
         case 'templates':
           return 'Templates'
+        case 'topology':
+          return 'Topology'
       }
     })()
     if (state.kind === 'ready') {
@@ -500,18 +501,12 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
         <summary style={{ cursor: 'pointer', fontWeight: 900 }}>Help</summary>
         <div className="muted" style={{ marginTop: 8 }}>
           {view === 'overview' ? (
-            <>High-level status for this environment. Use the tools bar to switch to Expected sets / Topology / Templates.</>
+            <>Edit the environment and manage Servers. Then drill down into a Server to configure Tomcat targets and microservices.</>
           ) : null}
           {view === 'expected-sets' ? (
             <>
               Expected sets define what should exist: Tomcat webapp paths (per Server+Role) and Docker service profiles (per Docker server). Use <code>EXPLICIT</code>{' '}
               for a custom list, or <code>TEMPLATE</code> to pick a reusable template. Saving is blocked if any spec is <code>UNCONFIGURED</code>.
-            </>
-          ) : null}
-          {view === 'topology' ? (
-            <>
-              Configure servers and targets. Every Tomcat target is bound to a Server and Role. Scanner runs automatically on a background schedule (no manual scanning
-              from UI).
             </>
           ) : null}
           {view === 'templates' ? (
@@ -535,7 +530,7 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
       ) : null}
 
       {state.kind === 'ready' && view === 'overview' ? (
-        <div className="card" style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
           <div className="card" style={{ padding: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ fontWeight: 900 }}>Decision</div>
@@ -563,17 +558,137 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
               </div>
             )}
           </div>
-          <div className="card" style={{ padding: 12, marginTop: 10 }}>
+
+          <div className="card" style={{ padding: 12 }}>
             <div className="h2" style={{ margin: 0 }}>
-              Summary
+              Servers
             </div>
-            <div className="kv" style={{ marginTop: 10 }}>
-              <div className="k">Servers</div>
-              <div className="v">{state.servers.length}</div>
-              <div className="k">Tomcat targets</div>
-              <div className="v">{state.targets.length}</div>
-              <div className="k">Docker microservices</div>
-              <div className="v">{state.actuatorTargets.length}</div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Add/rename/delete servers here, then drill down into a server to configure targets and microservices.
+            </div>
+
+            <div className="tableWrap" style={{ marginTop: 10 }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Server</th>
+                    <th>Tomcats</th>
+                    <th>Microservices</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.servers.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="muted">
+                        No servers yet.
+                      </td>
+                    </tr>
+                  ) : null}
+                  {state.servers.map((server) => {
+                    const tomcats = state.targets.filter((t) => t.serverId === server.id).length
+                    const micro = state.actuatorTargets.filter((t) => t.serverId === server.id).length
+                    const open = () =>
+                      navigate(`/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(server.id)}`)
+
+                    return (
+                      <tr key={server.id}>
+                        <td style={{ fontWeight: 800 }}>
+                          {editingServerId === server.id ? (
+                            <input
+                              className="fieldInput"
+                              value={serverEditName}
+                              onChange={(e) => setServerEditName(e.target.value)}
+                              aria-label={`Server name: ${server.name}`}
+                            />
+                          ) : (
+                            <>
+                              {server.name}
+                              <div className="muted" style={{ fontWeight: 500 }}>
+                                <code>{server.id}</code>
+                              </div>
+                            </>
+                          )}
+                        </td>
+                        <td className="muted">{tomcats}</td>
+                        <td className="muted">{micro}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button type="button" className="button" onClick={open}>
+                            Edit
+                          </button>
+                          {editingServerId === server.id ? (
+                            <>
+                              <button
+                                type="button"
+                                className="button"
+                                disabled={savingServerEdit}
+                                onClick={() => {
+                                  const controller = new AbortController()
+                                  setSavingServerEdit(true)
+                                  updateServer(environmentId, server.id, { name: serverEditName }, controller.signal)
+                                    .then(() => refresh())
+                                    .then(() => setEditingServerId(null))
+                                    .finally(() => setSavingServerEdit(false))
+                                }}
+                              >
+                                {savingServerEdit ? 'Saving…' : 'Save'}
+                              </button>
+                              <button type="button" className="button" onClick={() => setEditingServerId(null)} disabled={savingServerEdit}>
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button type="button" className="button" onClick={() => beginServerEdit(server)}>
+                              Rename
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="button"
+                            onClick={() => {
+                              if (!window.confirm(`Delete server '${server.name}'? This will also delete its targets.`)) return
+                              const controller = new AbortController()
+                              deleteServer(environmentId, server.id, controller.signal).then(() => refresh())
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="card" style={{ marginTop: 12, padding: 12, maxWidth: 820 }}>
+              <div className="h2">Add server</div>
+              <form
+                style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'end' }}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const controller = new AbortController()
+                  setSavingServer(true)
+                  createServer(environmentId, serverForm, controller.signal)
+                    .then(() => refresh())
+                    .then(() => setServerForm({ name: '' }))
+                    .finally(() => setSavingServer(false))
+                }}
+              >
+                <label className="field" style={{ flex: 1 }}>
+                  <div className="fieldLabel">Name</div>
+                  <input
+                    className="fieldInput"
+                    value={serverForm.name}
+                    onChange={(e) => setServerForm({ name: e.target.value })}
+                    placeholder="Touchpoint"
+                    required
+                  />
+                </label>
+                <button type="submit" className="button" disabled={savingServer}>
+                  {savingServer ? 'Saving…' : 'Add server'}
+                </button>
+              </form>
             </div>
           </div>
         </div>
@@ -618,6 +733,18 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <div style={{ fontWeight: 900 }}>{srv.name}</div>
                           <div className="muted">{specs.length} sets</div>
+                          <button
+                            type="button"
+                            className="button"
+                            style={{ marginLeft: 'auto' }}
+                            onClick={() =>
+                              navigate(
+                                `/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(srv.id)}`,
+                              )
+                            }
+                          >
+                            Open server
+                          </button>
                         </div>
                         <div className="tableWrap" style={{ marginTop: 10 }}>
                           <table className="table">

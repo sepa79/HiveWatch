@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Sort;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -73,5 +74,12 @@ public class AdminEnvironmentController {
         env.setName(name);
         EnvironmentEntity saved = environmentRepository.save(env);
         return new EnvironmentSummaryDto(saved.getId(), saved.getName());
+    }
+
+    @DeleteMapping("/api/v1/admin/environments/{environmentId}")
+    public void delete(@PathVariable("environmentId") UUID environmentId) {
+        EnvironmentEntity env = environmentRepository.findById(environmentId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Environment not found"));
+        environmentRepository.delete(env);
     }
 }
