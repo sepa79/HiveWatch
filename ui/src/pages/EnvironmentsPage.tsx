@@ -7,7 +7,7 @@ import {
   fetchEnvironments,
   type EnvironmentSummary,
 } from '../lib/hivewatchApi'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/authContext'
 
 type LoadState =
@@ -17,13 +17,14 @@ type LoadState =
 
 export function EnvironmentsPage() {
   const { state: auth } = useAuth()
+  const navigate = useNavigate()
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [createName, setCreateName] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [cloneTargetId, setCloneTargetId] = useState<string | null>(null)
-  const [cloneSourceId, setCloneSourceId] = useState<string>('')
+  const [cloningFromId, setCloningFromId] = useState<string | null>(null)
+  const [cloneNewName, setCloneNewName] = useState<string>('')
   const [cloning, setCloning] = useState(false)
   const [cloneError, setCloneError] = useState<string | null>(null)
 
@@ -156,24 +157,23 @@ export function EnvironmentsPage() {
                           <Link className="button" to={`/environments/${encodeURIComponent(env.id)}`}>
                             Edit
                           </Link>
-                          {isAdmin ? (
-                            <button
+                        {isAdmin ? (
+                          <button
                               type="button"
                               className="button"
                               onClick={() => {
                                 if (state.kind !== 'ready') return
                                 setCloneError(null)
-                                if (cloneTargetId === env.id) {
-                                  setCloneTargetId(null)
+                                if (cloningFromId === env.id) {
+                                  setCloningFromId(null)
                                   return
                                 }
-                                setCloneTargetId(env.id)
-                                const sources = state.environments.filter((e) => e.id !== env.id)
-                                setCloneSourceId(sources[0]?.id ?? '')
+                                setCloningFromId(env.id)
+                                setCloneNewName(`${env.name} Copy`)
                               }}
                               disabled={cloning}
                             >
-                              {cloneTargetId === env.id ? 'Close clone' : 'Clone'}
+                              {cloningFromId === env.id ? 'Close clone' : 'Clone'}
                             </button>
                           ) : null}
                           {isAdmin ? (
@@ -184,14 +184,14 @@ export function EnvironmentsPage() {
                         </div>
                       </td>
                     </tr>
-                    {isAdmin && state.kind === 'ready' && cloneTargetId === env.id ? (
+                    {isAdmin && state.kind === 'ready' && cloningFromId === env.id ? (
                       <tr>
                         <td colSpan={2}>
                           <div className="card" style={{ padding: 12 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ fontWeight: 900 }}>Clone config into {env.name}</div>
+                              <div style={{ fontWeight: 900 }}>Clone “{env.name}” into a new environment</div>
                               <div className="muted" style={{ marginLeft: 'auto' }}>
-                                Target must be empty.
+                                Creates a new env and copies servers/targets/expected sets.
                               </div>
                             </div>
 
@@ -203,40 +203,44 @@ export function EnvironmentsPage() {
 
                             <div style={{ display: 'flex', gap: 10, alignItems: 'end', marginTop: 10, maxWidth: 920 }}>
                               <label className="field" style={{ flex: 1 }}>
-                                <div className="fieldLabel">Source environment</div>
-                                <select
+                                <div className="fieldLabel">New environment name</div>
+                                <input
                                   className="fieldInput"
-                                  value={cloneSourceId}
-                                  onChange={(e) => setCloneSourceId(e.target.value)}
+                                  value={cloneNewName}
+                                  onChange={(e) => setCloneNewName(e.target.value)}
                                   disabled={cloning}
-                                  aria-label="Source environment"
-                                >
-                                  {state.environments
-                                    .filter((e) => e.id !== env.id)
-                                    .map((e) => (
-                                      <option key={e.id} value={e.id}>
-                                        {e.name}
-                                      </option>
-                                    ))}
-                                </select>
+                                  aria-label="New environment name"
+                                />
                               </label>
                               <button
                                 type="button"
                                 className="button"
-                                disabled={cloning || !cloneSourceId}
+                                disabled={cloning || !cloneNewName.trim()}
                                 onClick={() => {
-                                  const srcName = state.environments.find((e) => e.id === cloneSourceId)?.name ?? cloneSourceId
-                                  if (!window.confirm(`Clone config from '${srcName}' into '${env.name}'?\n\nThis will create servers and targets.`)) return
+                                  const name = cloneNewName.trim()
+                                  if (!name) {
+                                    setCloneError('Name is required.')
+                                    return
+                                  }
+                                  if (!window.confirm(`Create '${name}' by cloning '${env.name}'?\n\nThis will create servers and targets.`)) return
                                   setCloning(true)
                                   setCloneError(null)
                                   const controller = new AbortController()
-                                  cloneAdminEnvironmentConfig(env.id, { sourceEnvironmentId: cloneSourceId }, controller.signal)
-                                    .then((r) => {
+                                  createAdminEnvironment({ name }, controller.signal)
+                                    .then((created) =>
+                                      cloneAdminEnvironmentConfig(created.id, { sourceEnvironmentId: env.id }, controller.signal).then((r) => ({
+                                        created,
+                                        r,
+                                      })),
+                                    )
+                                    .then(({ created, r }) => {
                                       window.alert(
-                                        `Cloned: ${r.servers} servers, ${r.tomcatTargets} tomcat targets, ${r.actuatorTargets} microservices, ${r.tomcatExpectedSpecs} tomcat expected specs, ${r.dockerExpectedSpecs} docker expected specs.`,
+                                        `Created '${created.name}'. Cloned: ${r.servers} servers, ${r.tomcatTargets} tomcat targets, ${r.actuatorTargets} microservices, ${r.tomcatExpectedSpecs} tomcat expected specs, ${r.dockerExpectedSpecs} docker expected specs.`,
                                       )
-                                      setCloneTargetId(null)
+                                      setCloningFromId(null)
+                                      return refresh(controller.signal).then(() => created)
                                     })
+                                    .then((created) => navigate(`/environments/${encodeURIComponent(created.id)}/overview`))
                                     .catch((e) => setCloneError(e instanceof Error ? e.message : 'Request failed'))
                                     .finally(() => setCloning(false))
                                 }}
@@ -248,7 +252,7 @@ export function EnvironmentsPage() {
                                 className="button"
                                 disabled={cloning}
                                 onClick={() => {
-                                  setCloneTargetId(null)
+                                  setCloningFromId(null)
                                   setCloneError(null)
                                 }}
                               >
