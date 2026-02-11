@@ -89,6 +89,24 @@ export type TomcatWebapp = {
   version: string | null
 }
 
+export type TomcatExpectedWebapp = {
+  id: string
+  serverId: string
+  role: TomcatRole
+  path: string
+  createdAt: string
+}
+
+export type TomcatExpectedWebappItem = {
+  serverId: string
+  role: TomcatRole
+  path: string
+}
+
+export type TomcatExpectedWebappsReplaceRequest = {
+  items: TomcatExpectedWebappItem[]
+}
+
 export type TomcatTarget = {
   id: string
   serverId: string
@@ -242,6 +260,26 @@ export async function fetchTomcatTargets(environmentId: string, signal?: AbortSi
     headers: withDevAuthHeaders(),
   })
   return readJsonOrThrow<TomcatTarget[]>(response)
+}
+
+export async function fetchTomcatExpectedWebapps(environmentId: string, signal?: AbortSignal): Promise<TomcatExpectedWebapp[]> {
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-expected-webapps`, {
+    signal,
+    headers: withDevAuthHeaders(),
+  })
+  return readJsonOrThrow<TomcatExpectedWebapp[]>(response)
+}
+
+export async function replaceTomcatExpectedWebapps(
+  environmentId: string,
+  request: TomcatExpectedWebappsReplaceRequest,
+  signal?: AbortSignal,
+): Promise<TomcatExpectedWebapp[]> {
+  return putJsonOrThrow<TomcatExpectedWebapp[]>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-expected-webapps`,
+    request,
+    signal,
+  )
 }
 
 export async function fetchServers(environmentId: string, signal?: AbortSignal): Promise<Server[]> {

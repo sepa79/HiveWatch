@@ -8,9 +8,11 @@ import {
   deleteServer,
   deleteTomcatTarget,
   fetchActuatorTargets,
+  fetchTomcatExpectedWebapps,
   fetchEnvironmentStatus,
   fetchServers,
   fetchTomcatTargets,
+  replaceTomcatExpectedWebapps,
   updateActuatorTarget,
   updateServer,
   updateTomcatTarget,
@@ -19,6 +21,8 @@ import {
   type EnvironmentStatus,
   type Server,
   type ServerCreateRequest,
+  type TomcatExpectedWebapp,
+  type TomcatExpectedWebappItem,
   type TomcatTarget,
   type TomcatTargetCreateRequest,
   type TomcatRole,
@@ -26,7 +30,14 @@ import {
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; servers: Server[]; targets: TomcatTarget[]; actuatorTargets: ActuatorTarget[]; status: EnvironmentStatus }
+  | {
+      kind: 'ready'
+      servers: Server[]
+      targets: TomcatTarget[]
+      actuatorTargets: ActuatorTarget[]
+      status: EnvironmentStatus
+      expectedWebapps: TomcatExpectedWebapp[]
+    }
   | { kind: 'error'; message: string }
 
 export function EnvironmentDetailPage() {
@@ -39,6 +50,11 @@ export function EnvironmentDetailPage() {
   const [editingServerId, setEditingServerId] = useState<string | null>(null)
   const [serverEditName, setServerEditName] = useState('')
   const [savingServerEdit, setSavingServerEdit] = useState(false)
+
+  const [expectedDraft, setExpectedDraft] = useState<TomcatExpectedWebappItem[]>([])
+  const [expectedForm, setExpectedForm] = useState<TomcatExpectedWebappItem>({ serverId: '', role: 'PAYMENTS', path: '' })
+  const [savingExpected, setSavingExpected] = useState(false)
+  const [expectedError, setExpectedError] = useState<string | null>(null)
 
   const [editingTomcatTargetId, setEditingTomcatTargetId] = useState<string | null>(null)
   const [tomcatEditForm, setTomcatEditForm] = useState<TomcatTargetCreateRequest | null>(null)
@@ -77,8 +93,13 @@ export function EnvironmentDetailPage() {
       fetchTomcatTargets(environmentId, signal),
       fetchActuatorTargets(environmentId, signal),
       fetchEnvironmentStatus(environmentId, signal),
+      fetchTomcatExpectedWebapps(environmentId, signal),
     ])
-      .then(([servers, targets, actuatorTargets, status]) => setState({ kind: 'ready', servers, targets, actuatorTargets, status }))
+      .then(([servers, targets, actuatorTargets, status, expectedWebapps]) => {
+        setState({ kind: 'ready', servers, targets, actuatorTargets, status, expectedWebapps })
+        setExpectedDraft(expectedWebapps.map((e) => ({ serverId: e.serverId, role: e.role, path: e.path })))
+        setExpectedError(null)
+      })
       .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
 
   useEffect(() => {
@@ -104,6 +125,15 @@ export function EnvironmentDetailPage() {
     setActuatorForm((f) => ({ ...f, serverId: (swarm ?? state.servers[0]).id }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
+
+  useEffect(() => {
+    if (state.kind !== 'ready') return
+    if (expectedForm.serverId) return
+    const tomcatServerIds = new Set(state.targets.map((t) => t.serverId))
+    const candidates = state.servers.filter((s) => tomcatServerIds.has(s.id))
+    if (candidates.length === 0) return
+    setExpectedForm((f) => ({ ...f, serverId: candidates[0].id }))
+  }, [expectedForm.serverId, state])
 
   const title = useMemo(() => {
     if (state.kind === 'ready')
@@ -202,6 +232,54 @@ export function EnvironmentDetailPage() {
     })
   }
 
+  const addExpectedWebapp = () => {
+    if (state.kind !== 'ready') return
+    setExpectedError(null)
+
+    const serverId = expectedForm.serverId.trim()
+    const path = expectedForm.path.trim()
+    if (!serverId) {
+      setExpectedError('Server is required')
+      return
+    }
+    if (!state.servers.some((s) => s.id === serverId)) {
+      setExpectedError('Server not found')
+      return
+    }
+    if (!path) {
+      setExpectedError('Path is required')
+      return
+    }
+    if (!path.startsWith('/')) {
+      setExpectedError("Path must start with '/'")
+      return
+    }
+
+    const dup = expectedDraft.some((e) => e.serverId === serverId && e.role === expectedForm.role && e.path === path)
+    if (dup) {
+      setExpectedError('Expected webapp already exists')
+      return
+    }
+
+    setExpectedDraft((prev) => [...prev, { serverId, role: expectedForm.role, path }])
+    setExpectedForm((f) => ({ ...f, path: '' }))
+  }
+
+  const removeExpectedWebapp = (item: TomcatExpectedWebappItem) => {
+    setExpectedDraft((prev) => prev.filter((e) => !(e.serverId === item.serverId && e.role === item.role && e.path === item.path)))
+  }
+
+  const saveExpectedWebapps = () => {
+    if (state.kind !== 'ready') return
+    setSavingExpected(true)
+    setExpectedError(null)
+    const controller = new AbortController()
+    replaceTomcatExpectedWebapps(environmentId, { items: expectedDraft }, controller.signal)
+      .then(() => refresh())
+      .catch((e) => setExpectedError(e instanceof Error ? e.message : 'Request failed'))
+      .finally(() => setSavingExpected(false))
+  }
+
   return (
     <div className="page">
       <h1 className="h1">{title}</h1>
@@ -237,6 +315,125 @@ export function EnvironmentDetailPage() {
                 No issues.
               </div>
             )}
+          </div>
+        ) : null}
+
+        {state.kind === 'ready' ? (
+          <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="h2" style={{ margin: 0 }}>
+                Expected webapps (Tomcats)
+              </div>
+              <button type="button" className="button" style={{ marginLeft: 'auto' }} onClick={saveExpectedWebapps} disabled={savingExpected}>
+                {savingExpected ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Used to flag missing webapps in Dashboard (per <code>Server</code> + <code>Role</code>). Path must match Tomcat Manager “Path” (starts with <code>/</code>).
+            </div>
+
+            {expectedError ? (
+              <div className="muted" style={{ marginTop: 8 }}>
+                Error: {expectedError}
+              </div>
+            ) : null}
+
+            <div className="tableWrap" style={{ marginTop: 10 }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Server</th>
+                    <th>Role</th>
+                    <th>Path</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {expectedDraft.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="muted">
+                        No expected webapps configured.
+                      </td>
+                    </tr>
+                  ) : null}
+                  {[...expectedDraft]
+                    .sort((a, b) => {
+                      const as = state.servers.find((s) => s.id === a.serverId)?.name ?? a.serverId
+                      const bs = state.servers.find((s) => s.id === b.serverId)?.name ?? b.serverId
+                      const byServer = as.localeCompare(bs)
+                      if (byServer !== 0) return byServer
+                      const byRole = a.role.localeCompare(b.role)
+                      if (byRole !== 0) return byRole
+                      return a.path.localeCompare(b.path)
+                    })
+                    .map((e) => {
+                      const serverName = state.servers.find((s) => s.id === e.serverId)?.name ?? e.serverId
+                      return (
+                        <tr key={`${e.serverId}:${e.role}:${e.path}`}>
+                          <td style={{ fontWeight: 800 }}>{serverName}</td>
+                          <td className="muted">{roleLabel(e.role)}</td>
+                          <td>{e.path}</td>
+                          <td>
+                            <button type="button" className="button" onClick={() => removeExpectedWebapp(e)}>
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            <form
+              style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr 2fr auto', gap: 10, alignItems: 'end' }}
+              onSubmit={(e) => {
+                e.preventDefault()
+                addExpectedWebapp()
+              }}
+            >
+              <label className="field">
+                <div className="fieldLabel">Server</div>
+                <select
+                  className="fieldInput"
+                  value={expectedForm.serverId}
+                  onChange={(e) => setExpectedForm((f) => ({ ...f, serverId: e.target.value }))}
+                  required
+                >
+                  {state.servers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <div className="fieldLabel">Role</div>
+                <select
+                  className="fieldInput"
+                  value={expectedForm.role}
+                  onChange={(e) => setExpectedForm((f) => ({ ...f, role: e.target.value as TomcatRole }))}
+                  required
+                >
+                  <option value="PAYMENTS">payments</option>
+                  <option value="SERVICES">services</option>
+                  <option value="AUTH">auth</option>
+                </select>
+              </label>
+              <label className="field">
+                <div className="fieldLabel">Path</div>
+                <input
+                  className="fieldInput"
+                  value={expectedForm.path}
+                  onChange={(e) => setExpectedForm((f) => ({ ...f, path: e.target.value }))}
+                  placeholder="/PaymentApp1"
+                  required
+                />
+              </label>
+              <button type="submit" className="button">
+                Add
+              </button>
+            </form>
           </div>
         ) : null}
 

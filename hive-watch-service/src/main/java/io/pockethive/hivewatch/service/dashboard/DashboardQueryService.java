@@ -31,6 +31,8 @@ import io.pockethive.hivewatch.service.tomcat.TomcatTargetEntity;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetRepository;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetScanStateEntity;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetScanStateRepository;
+import io.pockethive.hivewatch.service.tomcat.expected.TomcatExpectedWebappEntity;
+import io.pockethive.hivewatch.service.tomcat.expected.TomcatExpectedWebappRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -57,6 +59,7 @@ public class DashboardQueryService {
     private final ServerRepository serverRepository;
     private final TomcatTargetRepository tomcatTargetRepository;
     private final TomcatTargetScanStateRepository tomcatTargetScanStateRepository;
+    private final TomcatExpectedWebappRepository tomcatExpectedWebappRepository;
     private final ActuatorTargetRepository actuatorTargetRepository;
     private final ActuatorTargetScanStateRepository actuatorTargetScanStateRepository;
     private final DecisionEngine decisionEngine;
@@ -66,6 +69,7 @@ public class DashboardQueryService {
             ServerRepository serverRepository,
             TomcatTargetRepository tomcatTargetRepository,
             TomcatTargetScanStateRepository tomcatTargetScanStateRepository,
+            TomcatExpectedWebappRepository tomcatExpectedWebappRepository,
             ActuatorTargetRepository actuatorTargetRepository,
             ActuatorTargetScanStateRepository actuatorTargetScanStateRepository,
             DecisionEngine decisionEngine,
@@ -74,10 +78,11 @@ public class DashboardQueryService {
         this.serverRepository = serverRepository;
         this.tomcatTargetRepository = tomcatTargetRepository;
         this.tomcatTargetScanStateRepository = tomcatTargetScanStateRepository;
+        this.tomcatExpectedWebappRepository = tomcatExpectedWebappRepository;
         this.actuatorTargetRepository = actuatorTargetRepository;
         this.actuatorTargetScanStateRepository = actuatorTargetScanStateRepository;
-            this.decisionEngine = decisionEngine;
-            this.environmentVisibilityService = environmentVisibilityService;
+        this.decisionEngine = decisionEngine;
+        this.environmentVisibilityService = environmentVisibilityService;
     }
 
     @Transactional(readOnly = true)
@@ -120,6 +125,16 @@ public class DashboardQueryService {
                 .findAllById(tomcatTargets.stream().map(TomcatTargetEntity::getId).toList())
                 .stream()
                 .collect(java.util.stream.Collectors.toMap(TomcatTargetScanStateEntity::getTargetId, Function.identity()));
+
+        Map<ExpectedKey, Set<String>> expectedWebappsByServerRole = serverIds.isEmpty()
+                ? Map.of()
+                : tomcatExpectedWebappRepository
+                        .findByServerIdIn(serverIds)
+                        .stream()
+                        .collect(java.util.stream.Collectors.groupingBy(
+                                e -> new ExpectedKey(e.getServerId(), e.getRole()),
+                                java.util.stream.Collectors.mapping(TomcatExpectedWebappEntity::getPath, java.util.stream.Collectors.toSet())
+                        ));
 
         Map<UUID, ActuatorTargetScanStateEntity> actuatorStateByTargetId = actuatorTargetScanStateRepository
                 .findAllById(actuatorTargets.stream().map(ActuatorTargetEntity::getId).toList())
@@ -191,7 +206,13 @@ public class DashboardQueryService {
             );
 
             List<DashboardSectionDto> sections = new ArrayList<>();
-            sections.add(computeTomcatsSection(env.getId(), serversByEnv.getOrDefault(env.getId(), List.of()), envTomcats, tomcatStateByTargetId));
+            sections.add(computeTomcatsSection(
+                    env.getId(),
+                    serversByEnv.getOrDefault(env.getId(), List.of()),
+                    envTomcats,
+                    tomcatStateByTargetId,
+                    expectedWebappsByServerRole
+            ));
             sections.add(computeDockerSection(env.getId(), serversByEnv.getOrDefault(env.getId(), List.of()), envActuators, actuatorStateByTargetId));
             sections.add(new DashboardSectionDto(DashboardSectionKind.AWS, "AWS (placeholder)", List.of(), List.of()));
 
@@ -478,7 +499,8 @@ public class DashboardQueryService {
             UUID environmentId,
             List<ServerEntity> envServers,
             List<TomcatTargetEntity> envTargets,
-            Map<UUID, TomcatTargetScanStateEntity> stateByTargetId
+            Map<UUID, TomcatTargetScanStateEntity> stateByTargetId,
+            Map<ExpectedKey, Set<String>> expectedWebappsByServerRole
     ) {
         Map<UUID, ServerEntity> serverById = envServers.stream()
                 .collect(java.util.stream.Collectors.toMap(ServerEntity::getId, Function.identity()));
@@ -516,7 +538,8 @@ public class DashboardQueryService {
                     continue;
                 }
                 TomcatTargetScanStateEntity st = stateByTargetId.get(t.getId());
-                cells.add(tomcatRoleCell(c.role(), st));
+                Set<String> expected = expectedWebappsByServerRole.getOrDefault(new ExpectedKey(serverId, c.role()), Set.of());
+                cells.add(tomcatRoleCell(c.role(), st, expected));
             }
 
             DashboardCellDto tomcatVersion = uniformStringCell(
@@ -623,8 +646,12 @@ public class DashboardQueryService {
         return DashboardRowStatus.OK;
     }
 
-    private static DashboardCellDto tomcatRoleCell(TomcatRole role, TomcatTargetScanStateEntity st) {
+    private static DashboardCellDto tomcatRoleCell(TomcatRole role, TomcatTargetScanStateEntity st, Set<String> expectedPaths) {
         if (st == null) {
+            if (expectedPaths != null && !expectedPaths.isEmpty()) {
+                String title = "Missing expected webapps: " + String.join(", ", expectedPaths.stream().limit(6).toList());
+                return new DashboardCellDto(DashboardCellKind.ERROR, null, role.name() + " mismatch: " + title);
+            }
             return new DashboardCellDto(DashboardCellKind.UNKNOWN, null, null);
         }
         if (st.getOutcomeKind() != io.pockethive.hivewatch.service.api.TomcatScanOutcomeKind.SUCCESS) {
@@ -636,6 +663,23 @@ public class DashboardQueryService {
         List<TomcatWebappDto> relevant = st.getWebapps().stream()
                 .filter(w -> !BUILT_IN_WEBAPPS.contains(w.path()))
                 .toList();
+
+        Set<String> presentPaths = relevant.stream()
+                .map(w -> w.path() == null ? "" : w.path().trim())
+                .filter(p -> !p.isEmpty())
+                .collect(java.util.stream.Collectors.toSet());
+
+        if (expectedPaths != null && !expectedPaths.isEmpty()) {
+            List<String> missingExpected = expectedPaths.stream()
+                    .filter(p -> !presentPaths.contains(p))
+                    .sorted(String::compareToIgnoreCase)
+                    .toList();
+            if (!missingExpected.isEmpty()) {
+                String title = "Missing expected webapps: " + String.join(", ", missingExpected.stream().limit(6).toList());
+                return new DashboardCellDto(DashboardCellKind.ERROR, null, role.name() + " mismatch: " + title);
+            }
+        }
+
         if (relevant.isEmpty()) {
             return new DashboardCellDto(DashboardCellKind.UNKNOWN, null, null);
         }
@@ -693,5 +737,8 @@ public class DashboardQueryService {
     }
 
     private record TomcatRoleColumn(TomcatRole role, String key, String label) {
+    }
+
+    private record ExpectedKey(UUID serverId, TomcatRole role) {
     }
 }
