@@ -4,11 +4,11 @@ import java.util.UUID;
 
 public record TomcatTargetDto(
         UUID id,
-        UUID environmentId,
-        String name,
+        UUID serverId,
+        String serverName,
+        TomcatRole role,
         String baseUrl,
         int port,
         TomcatTargetStateDto state
 ) {
 }
-

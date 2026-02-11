@@ -5,6 +5,8 @@ import io.pockethive.hivewatch.service.api.TomcatScanOutcomeKind;
 import io.pockethive.hivewatch.service.api.TomcatTargetCreateRequestDto;
 import io.pockethive.hivewatch.service.api.TomcatTargetDto;
 import io.pockethive.hivewatch.service.api.TomcatTargetStateDto;
+import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
+import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import java.net.URI;
 import java.time.Instant;
@@ -22,15 +24,18 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 @Service
 public class TomcatTargetService {
     private final EnvironmentRepository environmentRepository;
+    private final ServerRepository serverRepository;
     private final TomcatTargetRepository tomcatTargetRepository;
     private final TomcatTargetScanStateRepository tomcatTargetScanStateRepository;
 
     public TomcatTargetService(
             EnvironmentRepository environmentRepository,
+            ServerRepository serverRepository,
             TomcatTargetRepository tomcatTargetRepository,
             TomcatTargetScanStateRepository tomcatTargetScanStateRepository
     ) {
         this.environmentRepository = environmentRepository;
+        this.serverRepository = serverRepository;
         this.tomcatTargetRepository = tomcatTargetRepository;
         this.tomcatTargetScanStateRepository = tomcatTargetScanStateRepository;
     }
@@ -38,13 +43,19 @@ public class TomcatTargetService {
     @Transactional(readOnly = true)
     public List<TomcatTargetDto> listWithState(UUID environmentId) {
         requireEnvironment(environmentId);
-        List<TomcatTargetEntity> targets = tomcatTargetRepository.findByEnvironmentId(environmentId);
+        List<ServerEntity> servers = serverRepository.findByEnvironmentId(environmentId);
+        if (servers.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, ServerEntity> serverById = servers.stream().collect(java.util.stream.Collectors.toMap(ServerEntity::getId, Function.identity()));
+
+        List<TomcatTargetEntity> targets = tomcatTargetRepository.findByServerIdIn(servers.stream().map(ServerEntity::getId).toList());
         Map<UUID, TomcatTargetScanStateEntity> states = tomcatTargetScanStateRepository
                 .findAllById(targets.stream().map(TomcatTargetEntity::getId).toList())
                 .stream()
                 .collect(java.util.stream.Collectors.toMap(TomcatTargetScanStateEntity::getTargetId, Function.identity()));
 
-        return targets.stream().map(t -> toDto(t, states.get(t.getId()))).toList();
+        return targets.stream().map(t -> toDto(t, serverById.get(t.getServerId()), states.get(t.getId()))).toList();
     }
 
     @Transactional
@@ -52,11 +63,17 @@ public class TomcatTargetService {
         requireEnvironment(environmentId);
         validateCreateRequest(request);
 
+        UUID serverId = request.serverId();
+        if (!serverRepository.existsByIdAndEnvironmentId(serverId, environmentId)) {
+            throw new ResponseStatusException(BAD_REQUEST, "serverId is not part of this environment");
+        }
+        ServerEntity server = serverRepository.findById(serverId).orElse(null);
+
         UUID id = UUID.randomUUID();
         TomcatTargetEntity created = tomcatTargetRepository.save(new TomcatTargetEntity(
                 id,
-                environmentId,
-                request.name().trim(),
+                serverId,
+                request.role(),
                 request.baseUrl().trim(),
                 request.port(),
                 request.username().trim(),
@@ -66,7 +83,7 @@ public class TomcatTargetService {
                 Instant.now()
         ));
 
-        return toDto(created, null);
+        return toDto(created, server, null);
     }
 
     private void requireEnvironment(UUID environmentId) {
@@ -79,8 +96,11 @@ public class TomcatTargetService {
         if (request == null) {
             throw new ResponseStatusException(BAD_REQUEST, "Request body is required");
         }
-        if (request.name() == null || request.name().trim().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "name is required");
+        if (request.serverId() == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "serverId is required");
+        }
+        if (request.role() == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "role is required");
         }
         if (request.baseUrl() == null || request.baseUrl().trim().isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, "baseUrl is required");
@@ -124,7 +144,7 @@ public class TomcatTargetService {
         }
     }
 
-    static TomcatTargetDto toDto(TomcatTargetEntity target, TomcatTargetScanStateEntity state) {
+    static TomcatTargetDto toDto(TomcatTargetEntity target, ServerEntity server, TomcatTargetScanStateEntity state) {
         TomcatTargetStateDto stateDto = null;
         if (state != null) {
             stateDto = new TomcatTargetStateDto(
@@ -137,8 +157,9 @@ public class TomcatTargetService {
         }
         return new TomcatTargetDto(
                 target.getId(),
-                target.getEnvironmentId(),
-                target.getName(),
+                target.getServerId(),
+                server == null ? "Unknown" : server.getName(),
+                target.getRole(),
                 target.getBaseUrl(),
                 target.getPort(),
                 stateDto
@@ -178,4 +199,3 @@ public class TomcatTargetService {
         return trimmed.substring(0, Math.max(0, max - 1)) + "…";
     }
 }
-

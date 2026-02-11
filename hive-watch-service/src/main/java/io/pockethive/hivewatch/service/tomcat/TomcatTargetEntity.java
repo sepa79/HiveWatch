@@ -1,7 +1,10 @@
 package io.pockethive.hivewatch.service.tomcat;
 
+import io.pockethive.hivewatch.service.api.TomcatRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -13,11 +16,12 @@ public class TomcatTargetEntity {
     @Id
     private UUID id;
 
-    @Column(name = "environment_id", nullable = false)
-    private UUID environmentId;
+    @Column(name = "server_id", nullable = false)
+    private UUID serverId;
 
-    @Column(name = "name", nullable = false)
-    private String name;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false)
+    private TomcatRole role;
 
     @Column(name = "base_url", nullable = false)
     private String baseUrl;
@@ -45,8 +49,8 @@ public class TomcatTargetEntity {
 
     public TomcatTargetEntity(
             UUID id,
-            UUID environmentId,
-            String name,
+            UUID serverId,
+            TomcatRole role,
             String baseUrl,
             int port,
             String username,
@@ -56,8 +60,8 @@ public class TomcatTargetEntity {
             Instant createdAt
     ) {
         this.id = id;
-        this.environmentId = environmentId;
-        this.name = name;
+        this.serverId = serverId;
+        this.role = role;
         this.baseUrl = baseUrl;
         this.port = port;
         this.username = username;
@@ -71,12 +75,12 @@ public class TomcatTargetEntity {
         return id;
     }
 
-    public UUID getEnvironmentId() {
-        return environmentId;
+    public UUID getServerId() {
+        return serverId;
     }
 
-    public String getName() {
-        return name;
+    public TomcatRole getRole() {
+        return role;
     }
 
     public String getBaseUrl() {
@@ -107,4 +111,3 @@ public class TomcatTargetEntity {
         return createdAt;
     }
 }
-

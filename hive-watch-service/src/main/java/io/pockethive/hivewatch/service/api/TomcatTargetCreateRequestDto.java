@@ -1,7 +1,10 @@
 package io.pockethive.hivewatch.service.api;
 
+import java.util.UUID;
+
 public record TomcatTargetCreateRequestDto(
-        String name,
+        UUID serverId,
+        TomcatRole role,
         String baseUrl,
         int port,
         String username,
@@ -10,4 +13,3 @@ public record TomcatTargetCreateRequestDto(
         int requestTimeoutMs
 ) {
 }
-

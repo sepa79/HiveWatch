@@ -2,6 +2,8 @@
 
 Goal: close real end-to-end loops (config → scan → normalized output → dashboard) on the `dummy-stack` with real Tomcats.
 
+Dev note (for now): schema is treated as rewriteable; `./build-hive-watch.sh --dev` resets and reseeds DB. We can lock down real migrations closer to `1.0`.
+
 ## Slice 1 — 1 Tomcat target → webapps list
 - [x] DB: `TomcatTarget` (explicit adapter + explicit settings; no fallbacks)
 - [x] Backend API: CRUD for targets scoped to Environment
@@ -12,9 +14,9 @@ Goal: close real end-to-end loops (config → scan → normalized output → das
 - [x] Tests: parser unit test + backend context/DB integration
 
 ## Slice 2 — Grouping: Environment → Server → 3 Tomcats (same base URL, different ports)
-- [ ] Domain: `Server` grouping + explicit roles (`payments/services/auth`)
-- [ ] UI: drill-down like in assumptions (expand groups/servers)
-- [ ] Normalization: group results by server + role
+- [x] Domain: `Server` grouping + explicit roles (`payments/services/auth`)
+- [x] UI: drill-down (Dashboard + Environment topology)
+- [x] Normalization: group results by server + role
 
 ## Slice 3 — Microservices mock (Actuator HTTP)
 - [ ] Adapter: explicit actuator endpoints (`/health`, `/info`, selected `/metrics/*`)

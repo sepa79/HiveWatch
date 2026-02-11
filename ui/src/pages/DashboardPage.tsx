@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchDashboardEnvironments, scanEnvironmentTomcats, type DashboardEnvironment } from '../lib/hivewatchApi'
+import {
+  fetchDashboardEnvironments,
+  fetchTomcatTargets,
+  scanEnvironmentTomcats,
+  type DashboardEnvironment,
+  type TomcatTarget,
+} from '../lib/hivewatchApi'
 import { Link } from 'react-router-dom'
 
 type LoadState =
@@ -7,9 +13,16 @@ type LoadState =
   | { kind: 'ready'; environments: DashboardEnvironment[] }
   | { kind: 'error'; message: string }
 
+type EnvTargetsState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ready'; targets: TomcatTarget[] }
+  | { kind: 'error'; message: string }
+
 export function DashboardPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [scanningEnvId, setScanningEnvId] = useState<string | null>(null)
+  const [envTargets, setEnvTargets] = useState<Record<string, EnvTargetsState>>({})
 
   const refresh = useCallback((signal?: AbortSignal) => {
     return fetchDashboardEnvironments(signal)
@@ -58,6 +71,22 @@ export function DashboardPage() {
     }
   }
 
+  const getEnvTargetsState = (envId: string): EnvTargetsState => envTargets[envId] ?? { kind: 'idle' }
+
+  const loadEnvTargets = (envId: string) => {
+    if (getEnvTargetsState(envId).kind === 'loading' || getEnvTargetsState(envId).kind === 'ready') return
+    const controller = new AbortController()
+    setEnvTargets((prev) => ({ ...prev, [envId]: { kind: 'loading' } }))
+    fetchTomcatTargets(envId, controller.signal)
+      .then((targets) => setEnvTargets((prev) => ({ ...prev, [envId]: { kind: 'ready', targets } })))
+      .catch((e) =>
+        setEnvTargets((prev) => ({
+          ...prev,
+          [envId]: { kind: 'error', message: e instanceof Error ? e.message : 'Request failed' },
+        })),
+      )
+  }
+
   return (
     <div className="page">
       <h1 className="h1">{title}</h1>
@@ -73,7 +102,15 @@ export function DashboardPage() {
         {state.kind === 'ready' && state.environments.length > 0 ? (
           <div className="list">
             {state.environments.map((env) => (
-              <details key={env.id} className="card" style={{ marginTop: 10, padding: 12 }}>
+              <details
+                key={env.id}
+                className="card"
+                style={{ marginTop: 10, padding: 12 }}
+                onToggle={(e) => {
+                  const el = e.currentTarget
+                  if (el.open) loadEnvTargets(env.id)
+                }}
+              >
                 <summary style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{ fontWeight: 700, minWidth: 0 }}>
                     <Link to={`/environments/${encodeURIComponent(env.id)}`} style={{ textDecoration: 'none' }}>
@@ -116,6 +153,55 @@ export function DashboardPage() {
                 {env.tomcatTargets === 0 ? (
                   <div className="muted" style={{ marginTop: 10 }}>
                     No Tomcat targets yet. Add them in <Link to={`/environments/${encodeURIComponent(env.id)}`}>Environment config</Link>.
+                  </div>
+                ) : null}
+
+                {env.tomcatTargets > 0 ? (
+                  <div style={{ marginTop: 10 }}>
+                    {(() => {
+                      const tstate = getEnvTargetsState(env.id)
+                      if (tstate.kind === 'idle') {
+                        return <div className="muted">Expand to load topology…</div>
+                      }
+                      if (tstate.kind === 'loading') {
+                        return <div className="muted">Loading targets…</div>
+                      }
+                      if (tstate.kind === 'error') {
+                        return <div className="muted">Error: {tstate.message}</div>
+                      }
+                      if (tstate.kind !== 'ready') {
+                        return null
+                      }
+                      return (
+                        <div className="kv">
+                          {tstate.targets
+                            .slice()
+                            .sort((a, b) => (a.serverName + a.role).localeCompare(b.serverName + b.role))
+                            .map((t) => (
+                              <div key={t.id} style={{ display: 'contents' }}>
+                                <div className="k">
+                                  {t.serverName} · {t.role.toLowerCase()}
+                                </div>
+                                <div className="v">
+                                  {t.state ? (
+                                    t.state.outcomeKind === 'SUCCESS' ? (
+                                      <span>
+                                        OK · {t.state.webapps.length} webapps
+                                      </span>
+                                    ) : (
+                                      <span>
+                                        ERROR · {t.state.errorKind}: {t.state.errorMessage}
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="muted">Not scanned yet</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )
+                    })()}
                   </div>
                 ) : null}
               </details>

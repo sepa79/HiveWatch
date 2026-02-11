@@ -18,6 +18,7 @@ export type DashboardEnvironment = {
 
 export type TomcatScanOutcomeKind = 'SUCCESS' | 'ERROR'
 export type TomcatScanErrorKind = 'AUTH' | 'CONNECTIVITY' | 'TIMEOUT' | 'HTTP' | 'PARSE' | 'UNKNOWN'
+export type TomcatRole = 'PAYMENTS' | 'SERVICES' | 'AUTH'
 
 export type TomcatTargetState = {
   scannedAt: string
@@ -29,21 +30,33 @@ export type TomcatTargetState = {
 
 export type TomcatTarget = {
   id: string
-  environmentId: string
-  name: string
+  serverId: string
+  serverName: string
+  role: TomcatRole
   baseUrl: string
   port: number
   state: TomcatTargetState | null
 }
 
 export type TomcatTargetCreateRequest = {
-  name: string
+  serverId: string
+  role: TomcatRole
   baseUrl: string
   port: number
   username: string
   password: string
   connectTimeoutMs: number
   requestTimeoutMs: number
+}
+
+export type Server = {
+  id: string
+  environmentId: string
+  name: string
+}
+
+export type ServerCreateRequest = {
+  name: string
 }
 
 export type UserSummary = {
@@ -84,6 +97,19 @@ export async function fetchDashboardEnvironments(signal?: AbortSignal): Promise<
 export async function fetchTomcatTargets(environmentId: string, signal?: AbortSignal): Promise<TomcatTarget[]> {
   const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-targets`, { signal })
   return readJsonOrThrow<TomcatTarget[]>(response)
+}
+
+export async function fetchServers(environmentId: string, signal?: AbortSignal): Promise<Server[]> {
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/servers`, { signal })
+  return readJsonOrThrow<Server[]>(response)
+}
+
+export async function createServer(
+  environmentId: string,
+  request: ServerCreateRequest,
+  signal?: AbortSignal,
+): Promise<Server> {
+  return postJsonOrThrow<Server>(`/api/v1/environments/${encodeURIComponent(environmentId)}/servers`, request, signal)
 }
 
 export async function createTomcatTarget(

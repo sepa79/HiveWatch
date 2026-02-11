@@ -9,6 +9,7 @@ CLEAN_STACK=false
 BUILD_ONLY=false
 NO_DOCKER=false
 RESTART=false
+DEV_RESET=false
 
 usage() {
   cat <<USAGE
@@ -17,6 +18,7 @@ Usage: $(basename "$0") [options]
 Options:
   --quick        Skip tests during Maven build (-DskipTests).
   --clean        Stop and remove compose stack before build.
+  --dev          Reset dev DB (compose down -v) and reseed on start.
   --build-only   Build project and image, do not run compose up.
   --no-docker    Run Maven build only (skip Docker build and compose).
   --restart      Restart compose services after successful build.
@@ -64,6 +66,10 @@ while (($# > 0)); do
       CLEAN_STACK=true
       shift
       ;;
+    --dev)
+      DEV_RESET=true
+      shift
+      ;;
     --build-only)
       BUILD_ONLY=true
       shift
@@ -96,14 +102,29 @@ if $NO_DOCKER && $CLEAN_STACK; then
   exit 1
 fi
 
+if $NO_DOCKER && $DEV_RESET; then
+  echo "--dev cannot be used with --no-docker." >&2
+  exit 1
+fi
+
 if $NO_DOCKER && $BUILD_ONLY; then
   echo "--build-only cannot be used with --no-docker." >&2
+  exit 1
+fi
+
+if $DEV_RESET && $BUILD_ONLY; then
+  echo "--dev cannot be used with --build-only." >&2
   exit 1
 fi
 
 if $CLEAN_STACK; then
   echo "Stopping existing compose stack..."
   docker compose down --remove-orphans || true
+fi
+
+if $DEV_RESET; then
+  echo "Resetting dev DB (docker compose down -v)..."
+  docker compose down -v --remove-orphans || true
 fi
 
 MAVEN_ARGS=(clean package)

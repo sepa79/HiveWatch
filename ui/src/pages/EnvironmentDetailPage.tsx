@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
+  createServer,
   createTomcatTarget,
+  fetchServers,
   fetchTomcatTargets,
   scanEnvironmentTomcats,
+  type Server,
+  type ServerCreateRequest,
   type TomcatTarget,
   type TomcatTargetCreateRequest,
+  type TomcatRole,
 } from '../lib/hivewatchApi'
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; targets: TomcatTarget[] }
+  | { kind: 'ready'; servers: Server[]; targets: TomcatTarget[] }
   | { kind: 'error'; message: string }
 
 export function EnvironmentDetailPage() {
@@ -18,10 +23,12 @@ export function EnvironmentDetailPage() {
   const environmentId = params.environmentId ?? ''
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [saving, setSaving] = useState(false)
+  const [savingServer, setSavingServer] = useState(false)
   const [scanning, setScanning] = useState(false)
 
   const [form, setForm] = useState<TomcatTargetCreateRequest>({
-    name: '',
+    serverId: '',
+    role: 'PAYMENTS',
     baseUrl: 'http://hc-dummy-nft-01-touchpoint-tomcats',
     port: 8081,
     username: 'hc-manager',
@@ -30,9 +37,11 @@ export function EnvironmentDetailPage() {
     requestTimeoutMs: 5000,
   })
 
+  const [serverForm, setServerForm] = useState<ServerCreateRequest>({ name: '' })
+
   const refresh = (signal?: AbortSignal) =>
-    fetchTomcatTargets(environmentId, signal)
-      .then((targets) => setState({ kind: 'ready', targets }))
+    Promise.all([fetchServers(environmentId, signal), fetchTomcatTargets(environmentId, signal)])
+      .then(([servers, targets]) => setState({ kind: 'ready', servers, targets }))
       .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
 
   useEffect(() => {
@@ -42,8 +51,16 @@ export function EnvironmentDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [environmentId])
 
+  useEffect(() => {
+    if (state.kind !== 'ready') return
+    if (form.serverId) return
+    if (state.servers.length === 0) return
+    setForm((f) => ({ ...f, serverId: state.servers[0].id }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
+
   const title = useMemo(() => {
-    if (state.kind === 'ready') return `Environment · ${state.targets.length} Tomcat targets`
+    if (state.kind === 'ready') return `Environment · ${state.servers.length} servers · ${state.targets.length} Tomcat targets`
     return 'Environment'
   }, [state])
 
@@ -51,6 +68,15 @@ export function EnvironmentDetailPage() {
     if (!t.state) return <div className="pill" data-kind="missing">UNKNOWN</div>
     if (t.state.outcomeKind === 'SUCCESS') return <div className="pill" data-kind="ok">OK</div>
     return <div className="pill" data-kind="alert">BLOCK</div>
+  }
+
+  const roleLabel = (role: TomcatRole) => {
+    const labels: Record<TomcatRole, string> = {
+      PAYMENTS: 'payments',
+      SERVICES: 'services',
+      AUTH: 'auth',
+    }
+    return labels[role]
   }
 
   const formatTs = (iso: string | null) => {
@@ -68,10 +94,13 @@ export function EnvironmentDetailPage() {
       </div>
 
       <div className="card" style={{ marginTop: 12 }}>
-        <div className="h2">Tomcat targets (Manager HTML)</div>
+        <div className="h2">Topology: Environment → Server → Tomcats</div>
         <div className="muted" style={{ marginTop: 6 }}>
-          Scanner hits <code>/manager/html</code> using HTTP Basic auth. Every target must be explicit (baseUrl + port + creds + timeouts). If
-          HiveWatch runs in Docker, <code>localhost</code> means the container, so use the dummy-stack container hostnames (see dummy-stack README).
+          Every Tomcat target is explicitly assigned to a Server and Role (<code>payments</code>/<code>services</code>/<code>auth</code>). Scanner hits{' '}
+          <code>/manager/html</code> using HTTP Basic auth.
+        </div>
+        <div className="muted" style={{ marginTop: 6 }}>
+          If HiveWatch runs in Docker, <code>localhost</code> means the container, so use the dummy-stack container hostnames (see dummy-stack README).
         </div>
 
         <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -96,45 +125,98 @@ export function EnvironmentDetailPage() {
 
         {state.kind === 'ready' ? (
           <div style={{ marginTop: 10 }}>
-            {state.targets.length === 0 ? <div className="muted">No Tomcat targets yet.</div> : null}
-            {state.targets.map((t) => (
-              <details key={t.id} className="card" style={{ marginTop: 10, padding: 12 }}>
-                <summary style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ fontWeight: 700 }}>{t.name}</div>
-                  {pill(t)}
-                  <div className="muted" style={{ marginLeft: 'auto' }}>
-                    {t.baseUrl}:{t.port}
-                  </div>
-                </summary>
-                <div className="kv" style={{ marginTop: 10 }}>
-                  <div className="k">targetId</div>
-                  <div className="v">{t.id}</div>
-                  <div className="k">lastScan</div>
-                  <div className="v">{t.state ? formatTs(t.state.scannedAt) : '—'}</div>
-                  <div className="k">webapps</div>
-                  <div className="v">{t.state ? t.state.webapps.length : 0}</div>
-                  {t.state && t.state.outcomeKind === 'ERROR' ? (
-                    <>
-                      <div className="k">error</div>
-                      <div className="v">
-                        {t.state.errorKind}: {t.state.errorMessage}
+            {state.servers.length === 0 ? <div className="muted">No servers yet.</div> : null}
+
+            {state.servers.map((server) => {
+              const targets = state.targets
+                .filter((t) => t.serverId === server.id)
+                .slice()
+                .sort((a, b) => a.role.localeCompare(b.role))
+
+              return (
+                <details key={server.id} className="card" style={{ marginTop: 10, padding: 12 }}>
+                  <summary style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ fontWeight: 800 }}>{server.name}</div>
+                    <div className="muted" style={{ marginLeft: 'auto' }}>
+                      {targets.length} targets
+                    </div>
+                  </summary>
+
+                  {targets.length === 0 ? <div className="muted" style={{ marginTop: 10 }}>No targets.</div> : null}
+
+                  {targets.map((t) => (
+                    <details key={t.id} className="card" style={{ marginTop: 10, padding: 12 }}>
+                      <summary style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ fontWeight: 700 }}>{roleLabel(t.role)}</div>
+                        {pill(t)}
+                        <div className="muted" style={{ marginLeft: 'auto' }}>
+                          {t.baseUrl}:{t.port}
+                        </div>
+                      </summary>
+
+                      <div className="kv" style={{ marginTop: 10 }}>
+                        <div className="k">targetId</div>
+                        <div className="v">{t.id}</div>
+                        <div className="k">lastScan</div>
+                        <div className="v">{t.state ? formatTs(t.state.scannedAt) : '—'}</div>
+                        <div className="k">webapps</div>
+                        <div className="v">{t.state ? t.state.webapps.length : 0}</div>
+                        {t.state && t.state.outcomeKind === 'ERROR' ? (
+                          <>
+                            <div className="k">error</div>
+                            <div className="v">
+                              {t.state.errorKind}: {t.state.errorMessage}
+                            </div>
+                          </>
+                        ) : null}
                       </div>
-                    </>
-                  ) : null}
-                </div>
-                {t.state && t.state.webapps.length > 0 ? (
-                  <ul className="list" style={{ marginTop: 10 }}>
-                    {t.state.webapps.map((w) => (
-                      <li key={w}>
-                        <code>{w}</code>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </details>
-            ))}
+
+                      {t.state && t.state.webapps.length > 0 ? (
+                        <ul className="list" style={{ marginTop: 10 }}>
+                          {t.state.webapps.map((w) => (
+                            <li key={w}>
+                              <code>{w}</code>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </details>
+                  ))}
+                </details>
+              )
+            })}
           </div>
         ) : null}
+
+        <div className="card" style={{ marginTop: 12, padding: 12, maxWidth: 820 }}>
+          <div className="h2">Add server</div>
+          <form
+            style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'end' }}
+            onSubmit={(e) => {
+              e.preventDefault()
+              const controller = new AbortController()
+              setSavingServer(true)
+              createServer(environmentId, serverForm, controller.signal)
+                .then(() => refresh())
+                .then(() => setServerForm({ name: '' }))
+                .finally(() => setSavingServer(false))
+            }}
+          >
+            <label className="field" style={{ flex: 1 }}>
+              <div className="fieldLabel">Name</div>
+              <input
+                className="fieldInput"
+                value={serverForm.name}
+                onChange={(e) => setServerForm({ name: e.target.value })}
+                placeholder="Touchpoint"
+                required
+              />
+            </label>
+            <button type="submit" className="button" disabled={savingServer}>
+              {savingServer ? 'Saving…' : 'Add server'}
+            </button>
+          </form>
+        </div>
 
         <div className="card" style={{ marginTop: 12, padding: 12, maxWidth: 820 }}>
           <div className="h2">Add Tomcat target</div>
@@ -150,24 +232,42 @@ export function EnvironmentDetailPage() {
               setSaving(true)
               createTomcatTarget(environmentId, form, controller.signal)
                 .then(() => refresh())
-                .then(() =>
-                  setForm((f) => ({
-                    ...f,
-                    name: '',
-                  })),
-                )
+                .then(() => setForm((f) => ({ ...f })))
                 .finally(() => setSaving(false))
             }}
           >
             <label className="field">
-              <div className="fieldLabel">Name</div>
-              <input
+              <div className="fieldLabel">Server</div>
+              <select
                 className="fieldInput"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Touchpoint · payments"
+                value={form.serverId}
+                onChange={(e) => setForm((f) => ({ ...f, serverId: e.target.value }))}
                 required
-              />
+              >
+                <option value="" disabled>
+                  Select server…
+                </option>
+                {state.kind === 'ready'
+                  ? state.servers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))
+                  : null}
+              </select>
+            </label>
+            <label className="field">
+              <div className="fieldLabel">Role</div>
+              <select
+                className="fieldInput"
+                value={form.role}
+                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as TomcatRole }))}
+                required
+              >
+                <option value="PAYMENTS">payments</option>
+                <option value="SERVICES">services</option>
+                <option value="AUTH">auth</option>
+              </select>
             </label>
             <label className="field">
               <div className="fieldLabel">Base URL</div>
