@@ -609,7 +609,7 @@ public class DashboardQueryService {
             }
 
             DashboardRowStatus status = computeRowStatus(cells);
-            String link = "/environments/" + environmentId + "/docker/" + serverId;
+            String link = "/dashboard/docker/" + environmentId + "/" + serverId;
             rows.add(new DashboardRowDto(serverId, serverName, link, List.copyOf(cells), status));
         }
 

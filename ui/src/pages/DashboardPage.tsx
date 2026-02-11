@@ -303,7 +303,15 @@ export function DashboardMatrixPage() {
                             <tbody>
                               {section.rows.map((r) => (
                                 <tr key={r.id}>
-                                  <td style={{ fontWeight: 800 }}>{r.label}</td>
+                                  <td style={{ fontWeight: 800 }}>
+                                    {r.link ? (
+                                      <Link to={r.link} style={{ textDecoration: 'none' }}>
+                                        {r.label}
+                                      </Link>
+                                    ) : (
+                                      r.label
+                                    )}
+                                  </td>
                                   {r.cells.map((c, idx) => (
                                     <td key={idx} title={c.title ?? undefined}>
                                       {renderCell(c)}
@@ -327,4 +335,3 @@ export function DashboardMatrixPage() {
     </div>
   )
 }
-

@@ -4,6 +4,8 @@ import { RequireAuth } from './components/RequireAuth'
 import { AdminUsersPage } from './pages/AdminUsersPage'
 import { DashboardMatrixPage, DashboardOverviewPage } from './pages/DashboardPage'
 import { DiagnosticsPage } from './pages/DiagnosticsPage'
+import { DockerClusterPage } from './pages/DockerClusterPage'
+import { DockerServicePage } from './pages/DockerServicePage'
 import { EnvironmentDetailPage } from './pages/EnvironmentDetailPage'
 import { EnvironmentsPage } from './pages/EnvironmentsPage'
 import { HelpPage } from './pages/HelpPage'
@@ -38,6 +40,22 @@ export default function App() {
             element={
               <RequireAuth>
                 <DashboardMatrixPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/dashboard/docker/:environmentId/:serverId"
+            element={
+              <RequireAuth>
+                <DockerClusterPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/dashboard/docker/:environmentId/:serverId/services/:targetId"
+            element={
+              <RequireAuth>
+                <DockerServicePage />
               </RequireAuth>
             }
           />

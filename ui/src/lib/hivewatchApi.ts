@@ -325,6 +325,17 @@ export async function fetchActuatorTargets(environmentId: string, signal?: Abort
   return readJsonOrThrow<ActuatorTarget[]>(response)
 }
 
+export async function fetchActuatorTarget(environmentId: string, targetId: string, signal?: AbortSignal): Promise<ActuatorTarget> {
+  const response = await fetch(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets/${encodeURIComponent(targetId)}`,
+    {
+      signal,
+      headers: withDevAuthHeaders(),
+    },
+  )
+  return readJsonOrThrow<ActuatorTarget>(response)
+}
+
 export async function createActuatorTarget(
   environmentId: string,
   request: ActuatorTargetCreateRequest,

@@ -44,6 +44,15 @@ public class ActuatorTargetController {
         return actuatorTargetService.listWithState(environmentId);
     }
 
+    @GetMapping("/api/v1/environments/{environmentId}/actuator-targets/{targetId}")
+    public ActuatorTargetDto get(
+            @PathVariable("environmentId") UUID environmentId,
+            @PathVariable("targetId") UUID targetId
+    ) {
+        environmentVisibilityService.requireVisible(environmentId);
+        return actuatorTargetService.get(environmentId, targetId);
+    }
+
     @PostMapping("/api/v1/environments/{environmentId}/actuator-targets")
     public ActuatorTargetDto create(
             @PathVariable("environmentId") UUID environmentId,

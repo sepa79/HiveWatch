@@ -64,6 +64,21 @@ public class ActuatorTargetService {
     }
 
     @Transactional(readOnly = true)
+    public ActuatorTargetDto get(UUID environmentId, UUID targetId) {
+        requireEnvironment(environmentId);
+
+        ActuatorTargetEntity target = actuatorTargetRepository.findById(targetId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Actuator target not found"));
+        ServerEntity server = serverRepository.findById(target.getServerId())
+                .orElseThrow(() -> new IllegalStateException("Server not found for actuator target: " + target.getId()));
+        if (!server.getEnvironmentId().equals(environmentId)) {
+            throw new ResponseStatusException(NOT_FOUND, "Actuator target not found");
+        }
+        ActuatorTargetScanStateEntity state = actuatorTargetScanStateRepository.findById(targetId).orElse(null);
+        return toDto(target, server, state);
+    }
+
+    @Transactional(readOnly = true)
     public UUID environmentIdForTargetOrThrow(UUID targetId) {
         ActuatorTargetEntity target = actuatorTargetRepository.findById(targetId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Actuator target not found"));
