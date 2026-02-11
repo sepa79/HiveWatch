@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface TomcatExpectedWebappSpecRepository extends JpaRepository<TomcatExpectedWebappSpecEntity, UUID> {
     List<TomcatExpectedWebappSpecEntity> findByServerIdIn(List<UUID> serverIds);
 
+    void deleteByServerId(UUID serverId);
+
     void deleteByServerIdIn(List<UUID> serverIds);
 }
-

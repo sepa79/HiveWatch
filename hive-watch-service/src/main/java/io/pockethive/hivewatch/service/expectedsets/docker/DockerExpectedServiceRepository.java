@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface DockerExpectedServiceRepository extends JpaRepository<DockerExpectedServiceEntity, UUID> {
     List<DockerExpectedServiceEntity> findByServerIdIn(List<UUID> serverIds);
 
+    void deleteByServerId(UUID serverId);
+
     void deleteByServerIdIn(List<UUID> serverIds);
 }
-

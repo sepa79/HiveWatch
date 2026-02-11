@@ -16,7 +16,6 @@ import io.pockethive.hivewatch.service.tomcat.expected.TomcatExpectedWebappEntit
 import io.pockethive.hivewatch.service.tomcat.expected.TomcatExpectedWebappRepository;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -129,6 +128,61 @@ public class TomcatExpectedWebappsSpecService {
         return List.copyOf(result);
     }
 
+    @Transactional(readOnly = true)
+    public List<TomcatExpectedWebappsSpecDto> listForServer(UUID environmentId, UUID serverId) {
+        requireEnvironment(environmentId);
+        ServerEntity server = requireServer(environmentId, serverId);
+
+        List<TomcatTargetEntity> targets = tomcatTargetRepository.findByServerIdIn(List.of(serverId));
+        if (targets.isEmpty()) return List.of();
+
+        List<Key> keys = targets.stream()
+                .map(t -> new Key(t.getServerId(), t.getRole()))
+                .distinct()
+                .toList();
+
+        var specByKey = specRepository.findByServerIdIn(List.of(serverId)).stream()
+                .collect(java.util.stream.Collectors.toMap(e -> new Key(e.getServerId(), e.getRole()), Function.identity(), (a, b) -> a));
+
+        var explicitByKey = explicitRepository.findByServerIdIn(List.of(serverId)).stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        e -> new Key(e.getServerId(), e.getRole()),
+                        java.util.stream.Collectors.mapping(TomcatExpectedWebappEntity::getPath, java.util.stream.Collectors.toList())
+                ));
+
+        Set<UUID> templateIds = specByKey.values().stream()
+                .filter(s -> s.getMode() == ExpectedSetMode.TEMPLATE)
+                .map(TomcatExpectedWebappSpecEntity::getTemplateId)
+                .filter(id -> id != null)
+                .collect(java.util.stream.Collectors.toSet());
+
+        var templateItemsById = templateIds.isEmpty()
+                ? java.util.Map.<UUID, List<String>>of()
+                : templateItemRepository.findByTemplateIdIn(List.copyOf(templateIds)).stream()
+                        .collect(java.util.stream.Collectors.groupingBy(
+                                ExpectedSetTemplateItemEntity::getTemplateId,
+                                java.util.stream.Collectors.mapping(ExpectedSetTemplateItemEntity::getValue, java.util.stream.Collectors.toList())
+                        ));
+
+        List<TomcatExpectedWebappsSpecDto> result = new ArrayList<>();
+        for (Key k : keys) {
+            TomcatExpectedWebappSpecEntity spec = specByKey.get(k);
+            ExpectedSetMode mode = spec == null ? ExpectedSetMode.UNCONFIGURED : spec.getMode();
+            UUID templateId = spec == null ? null : spec.getTemplateId();
+
+            List<String> items;
+            if (mode == ExpectedSetMode.TEMPLATE && templateId != null) {
+                items = templateItemsById.getOrDefault(templateId, List.of());
+            } else {
+                items = explicitByKey.getOrDefault(k, List.of());
+            }
+            result.add(new TomcatExpectedWebappsSpecDto(serverId, k.role(), mode, templateId, List.copyOf(items)));
+        }
+
+        result.sort((a, b) -> a.role().compareTo(b.role()));
+        return List.copyOf(result);
+    }
+
     @Transactional
     public List<TomcatExpectedWebappsSpecDto> replace(UUID environmentId, TomcatExpectedWebappsSpecReplaceRequestDto request) {
         requireEnvironment(environmentId);
@@ -203,10 +257,92 @@ public class TomcatExpectedWebappsSpecService {
         return list(environmentId);
     }
 
+    @Transactional
+    public List<TomcatExpectedWebappsSpecDto> replaceForServer(UUID environmentId, UUID serverId, TomcatExpectedWebappsSpecReplaceRequestDto request) {
+        requireEnvironment(environmentId);
+        validateReplaceRequest(request);
+        requireServer(environmentId, serverId);
+
+        Set<TomcatRole> allowedRoles = tomcatTargetRepository.findByServerIdIn(List.of(serverId)).stream()
+                .map(TomcatTargetEntity::getRole)
+                .collect(java.util.stream.Collectors.toSet());
+
+        List<TomcatExpectedWebappsSpecDto> specs = request.specs() == null ? List.of() : request.specs();
+
+        Set<TomcatRole> seen = new HashSet<>();
+        Set<UUID> referencedTemplateIds = new HashSet<>();
+
+        for (TomcatExpectedWebappsSpecDto s : specs) {
+            if (s == null) throw new ResponseStatusException(BAD_REQUEST, "specs cannot contain null");
+            if (s.serverId() == null) throw new ResponseStatusException(BAD_REQUEST, "serverId is required");
+            if (!s.serverId().equals(serverId)) throw new ResponseStatusException(BAD_REQUEST, "serverId must match path param");
+            if (s.role() == null) throw new ResponseStatusException(BAD_REQUEST, "role is required");
+            if (!allowedRoles.isEmpty() && !allowedRoles.contains(s.role())) {
+                throw new ResponseStatusException(BAD_REQUEST, "role is not configured on this server: " + s.role());
+            }
+            if (s.mode() == null) throw new ResponseStatusException(BAD_REQUEST, "mode is required");
+            if (s.mode() == ExpectedSetMode.UNCONFIGURED) throw new ResponseStatusException(BAD_REQUEST, "mode cannot be UNCONFIGURED");
+            if (!seen.add(s.role())) throw new ResponseStatusException(BAD_REQUEST, "Duplicate spec for role: " + s.role());
+
+            if (s.mode() == ExpectedSetMode.TEMPLATE) {
+                if (s.templateId() == null) throw new ResponseStatusException(BAD_REQUEST, "templateId is required for TEMPLATE mode");
+                referencedTemplateIds.add(s.templateId());
+                if (s.items() != null && !s.items().isEmpty()) {
+                    throw new ResponseStatusException(BAD_REQUEST, "items must be empty in TEMPLATE mode");
+                }
+            } else if (s.mode() == ExpectedSetMode.EXPLICIT) {
+                if (s.templateId() != null) throw new ResponseStatusException(BAD_REQUEST, "templateId must be null in EXPLICIT mode");
+                validateWebappPaths(s.items() == null ? List.of() : s.items());
+            }
+        }
+
+        if (!referencedTemplateIds.isEmpty()) {
+            var templates = templateRepository.findAllById(referencedTemplateIds).stream()
+                    .collect(java.util.stream.Collectors.toMap(ExpectedSetTemplateEntity::getId, Function.identity()));
+            for (UUID tid : referencedTemplateIds) {
+                ExpectedSetTemplateEntity t = templates.get(tid);
+                if (t == null) throw new ResponseStatusException(BAD_REQUEST, "Template not found: " + tid);
+                if (t.getKind() != ExpectedSetTemplateKind.TOMCAT_WEBAPP_PATH) {
+                    throw new ResponseStatusException(BAD_REQUEST, "Template kind mismatch (expected TOMCAT_WEBAPP_PATH): " + tid);
+                }
+            }
+        }
+
+        specRepository.deleteByServerId(serverId);
+        explicitRepository.deleteByServerId(serverId);
+
+        Instant now = Instant.now();
+        specRepository.saveAll(specs.stream()
+                .map(s -> new TomcatExpectedWebappSpecEntity(UUID.randomUUID(), serverId, s.role(), s.mode(), s.templateId(), now))
+                .toList());
+
+        List<TomcatExpectedWebappEntity> explicitItems = new ArrayList<>();
+        for (TomcatExpectedWebappsSpecDto s : specs) {
+            if (s.mode() != ExpectedSetMode.EXPLICIT) continue;
+            for (String raw : (s.items() == null ? List.<String>of() : s.items())) {
+                String path = raw == null ? "" : raw.trim();
+                if (path.isEmpty()) continue;
+                explicitItems.add(new TomcatExpectedWebappEntity(UUID.randomUUID(), serverId, s.role(), path, now));
+            }
+        }
+        explicitRepository.saveAll(explicitItems);
+
+        return listForServer(environmentId, serverId);
+    }
+
     private void requireEnvironment(UUID environmentId) {
         if (!environmentRepository.existsById(environmentId)) {
             throw new ResponseStatusException(NOT_FOUND, "Environment not found");
         }
+    }
+
+    private ServerEntity requireServer(UUID environmentId, UUID serverId) {
+        ServerEntity srv = serverRepository.findById(serverId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Server not found"));
+        if (!srv.getEnvironmentId().equals(environmentId)) {
+            throw new ResponseStatusException(NOT_FOUND, "Server not found");
+        }
+        return srv;
     }
 
     private static void validateReplaceRequest(TomcatExpectedWebappsSpecReplaceRequestDto request) {
@@ -237,4 +373,3 @@ public class TomcatExpectedWebappsSpecService {
     private record Key(UUID serverId, TomcatRole role) {
     }
 }
-

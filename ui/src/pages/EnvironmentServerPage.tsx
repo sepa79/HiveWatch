@@ -1,28 +1,46 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   createActuatorTarget,
   createTomcatTarget,
   deleteActuatorTarget,
   deleteTomcatTarget,
   deleteServer,
+  fetchExpectedSetTemplates,
   fetchActuatorTargets,
+  fetchServerDockerExpectedServicesSpec,
+  fetchServerTomcatExpectedWebappsSpecs,
   fetchServers,
   fetchTomcatTargets,
+  replaceServerDockerExpectedServicesSpec,
+  replaceServerTomcatExpectedWebappsSpecs,
   updateActuatorTarget,
   updateServer,
   updateTomcatTarget,
   type ActuatorTarget,
   type ActuatorTargetCreateRequest,
+  type DockerExpectedServicesSpec,
+  type ExpectedSetMode,
+  type ExpectedSetTemplate,
   type Server,
   type TomcatRole,
+  type TomcatExpectedWebappsSpec,
   type TomcatTarget,
   type TomcatTargetCreateRequest,
 } from '../lib/hivewatchApi'
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; server: Server; tomcats: TomcatTarget[]; microservices: ActuatorTarget[] }
+  | {
+      kind: 'ready'
+      server: Server
+      tomcats: TomcatTarget[]
+      microservices: ActuatorTarget[]
+      tomcatExpected: TomcatExpectedWebappsSpec[]
+      dockerExpected: DockerExpectedServicesSpec
+      tomcatTemplates: ExpectedSetTemplate[]
+      dockerTemplates: ExpectedSetTemplate[]
+    }
   | { kind: 'error'; message: string }
 
 function formatTs(iso: string | null): string {
@@ -41,9 +59,25 @@ function roleLabel(role: TomcatRole) {
   return labels[role]
 }
 
+function parseLines(raw: string): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .forEach((l) => {
+      if (seen.has(l)) return
+      seen.add(l)
+      result.push(l)
+    })
+  return result
+}
+
 export function EnvironmentServerPage() {
   const params = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const environmentId = (params.environmentId ?? '').trim()
   const serverId = (params.serverId ?? '').trim()
@@ -64,6 +98,13 @@ export function EnvironmentServerPage() {
 
   const [savingTomcatCreate, setSavingTomcatCreate] = useState(false)
   const [savingActuatorCreate, setSavingActuatorCreate] = useState(false)
+
+  const [expectedTomcatDraft, setExpectedTomcatDraft] = useState<TomcatExpectedWebappsSpec[]>([])
+  const [expectedDockerDraft, setExpectedDockerDraft] = useState<DockerExpectedServicesSpec | null>(null)
+  const [savingExpectedTomcat, setSavingExpectedTomcat] = useState(false)
+  const [savingExpectedDocker, setSavingExpectedDocker] = useState(false)
+  const [expectedTomcatError, setExpectedTomcatError] = useState<string | null>(null)
+  const [expectedDockerError, setExpectedDockerError] = useState<string | null>(null)
 
   const [tomcatForm, setTomcatForm] = useState<TomcatTargetCreateRequest>({
     serverId,
@@ -102,8 +143,12 @@ export function EnvironmentServerPage() {
         fetchServers(environmentId, signal),
         fetchTomcatTargets(environmentId, signal),
         fetchActuatorTargets(environmentId, signal),
+        fetchServerTomcatExpectedWebappsSpecs(environmentId, serverId, signal),
+        fetchServerDockerExpectedServicesSpec(environmentId, serverId, signal),
+        fetchExpectedSetTemplates('TOMCAT_WEBAPP_PATH', signal),
+        fetchExpectedSetTemplates('DOCKER_SERVICE_PROFILE', signal),
       ])
-        .then(([servers, tomcats, microservices]) => {
+        .then(([servers, tomcats, microservices, tomcatExpected, dockerExpected, tomcatTemplates, dockerTemplates]) => {
           const srv = servers.find((s) => s.id === serverId)
           if (!srv) {
             setState({ kind: 'error', message: 'Server not found' })
@@ -114,8 +159,16 @@ export function EnvironmentServerPage() {
             server: srv,
             tomcats: tomcats.filter((t) => t.serverId === serverId),
             microservices: microservices.filter((t) => t.serverId === serverId),
+            tomcatExpected,
+            dockerExpected,
+            tomcatTemplates,
+            dockerTemplates,
           })
           setServerNameDraft(srv.name)
+          setExpectedTomcatDraft(tomcatExpected)
+          setExpectedDockerDraft(dockerExpected)
+          setExpectedTomcatError(null)
+          setExpectedDockerError(null)
         })
         .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
     },
@@ -128,10 +181,25 @@ export function EnvironmentServerPage() {
     return () => controller.abort()
   }, [refresh])
 
+  useEffect(() => {
+    if (location.hash !== '#expected-sets') return
+    const el = document.getElementById('expected-sets')
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [location.hash])
+
   const title = useMemo(() => {
     if (state.kind === 'ready') return `Server · ${state.server.name} · ${state.tomcats.length} Tomcats · ${state.microservices.length} microservices`
     return 'Server'
   }, [state])
+
+  const updateTomcatExpected = (role: TomcatRole, patch: Partial<TomcatExpectedWebappsSpec>) => {
+    setExpectedTomcatDraft((prev) => prev.map((s) => (s.role === role ? { ...s, ...patch } : s)))
+  }
+
+  const updateDockerExpected = (patch: Partial<DockerExpectedServicesSpec>) => {
+    setExpectedDockerDraft((prev) => (prev ? { ...prev, ...patch } : prev))
+  }
 
   const beginTomcatEdit = (t: TomcatTarget) => {
     setEditingTomcatTargetId(t.id)
@@ -170,7 +238,7 @@ export function EnvironmentServerPage() {
       <details className="card" style={{ marginTop: 12, padding: 12 }}>
         <summary style={{ cursor: 'pointer', fontWeight: 900 }}>Help</summary>
         <div className="muted" style={{ marginTop: 8 }}>
-          This screen configures a single Server: rename/delete server, and add/edit/remove Tomcat targets and microservices (Actuator targets).
+          This screen configures a single Server: rename/delete server, configure targets (Tomcats + microservices), and expected sets used for missing-app/service checks on the Dashboard.
         </div>
       </details>
 
@@ -246,6 +314,294 @@ export function EnvironmentServerPage() {
               </button>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {state.kind === 'ready' ? (
+        <div id="expected-sets" className="card" style={{ marginTop: 12, padding: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="h2" style={{ margin: 0 }}>
+              Expected sets
+            </div>
+            <div className="muted">Missing checks (optional) for this Server.</div>
+          </div>
+
+          <div className="muted" style={{ marginTop: 8 }}>
+            Use <code>Explicit</code> for a custom list, or <code>Template</code> to select a reusable template. Use <code>Disabled</code> to stop missing checks for this role/server.
+          </div>
+
+          <div className="card" style={{ marginTop: 12, padding: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontWeight: 900 }}>Tomcat webapps</div>
+              <button
+                type="button"
+                className="button"
+                style={{ marginLeft: 'auto' }}
+                disabled={savingExpectedTomcat}
+                onClick={() => {
+                  setExpectedTomcatError(null)
+                  const enabled = expectedTomcatDraft.filter((s) => s.mode !== 'UNCONFIGURED')
+
+                  for (const s of enabled) {
+                    if (s.mode === 'TEMPLATE' && !s.templateId) {
+                      setExpectedTomcatError(`Template is required for role ${roleLabel(s.role)}`)
+                      return
+                    }
+                    if (s.mode === 'EXPLICIT') {
+                      const items = s.items.map((i) => i.trim()).filter((i) => i.length > 0)
+                      if (items.length === 0) {
+                        setExpectedTomcatError(`Items cannot be empty for role ${roleLabel(s.role)} (Explicit mode)`)
+                        return
+                      }
+                    }
+                  }
+
+                  const controller = new AbortController()
+                  setSavingExpectedTomcat(true)
+                  replaceServerTomcatExpectedWebappsSpecs(
+                    environmentId,
+                    serverId,
+                    {
+                      specs: enabled.map((s) => ({
+                        serverId,
+                        role: s.role,
+                        mode: s.mode,
+                        templateId: s.mode === 'TEMPLATE' ? s.templateId : null,
+                        items: s.mode === 'EXPLICIT' ? s.items : [],
+                      })),
+                    },
+                    controller.signal,
+                  )
+                    .then((updated) => setExpectedTomcatDraft(updated))
+                    .catch((e) => setExpectedTomcatError(e instanceof Error ? e.message : 'Request failed'))
+                    .finally(() => setSavingExpectedTomcat(false))
+                }}
+              >
+                {savingExpectedTomcat ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+
+            {expectedTomcatError ? (
+              <div className="muted" style={{ marginTop: 8 }}>
+                Error: {expectedTomcatError}
+              </div>
+            ) : null}
+
+            {expectedTomcatDraft.length === 0 ? (
+              <div className="muted" style={{ marginTop: 10 }}>
+                No Tomcat roles configured on this server yet.
+              </div>
+            ) : (
+              <div className="tableWrap" style={{ marginTop: 10 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Role</th>
+                      <th style={{ width: 180 }}>Mode</th>
+                      <th style={{ width: 260 }}>Template</th>
+                      <th>Items</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expectedTomcatDraft
+                      .slice()
+                      .sort((a, b) => roleLabel(a.role).localeCompare(roleLabel(b.role)))
+                      .map((s) => {
+                        const mode = s.mode
+                        const itemsText = (mode === 'EXPLICIT' ? s.items : []).join('\n')
+                        return (
+                          <tr key={s.role}>
+                            <td style={{ fontWeight: 900 }}>{roleLabel(s.role)}</td>
+                            <td>
+                              <select
+                                className="fieldInput"
+                                value={mode}
+                                onChange={(e) => {
+                                  const nextMode = e.target.value as ExpectedSetMode
+                                  updateTomcatExpected(s.role, { mode: nextMode, templateId: null, items: [] })
+                                }}
+                                aria-label={`Expected sets mode for ${roleLabel(s.role)}`}
+                              >
+                                <option value="UNCONFIGURED">Disabled</option>
+                                <option value="EXPLICIT">Explicit</option>
+                                <option value="TEMPLATE">Template</option>
+                              </select>
+                            </td>
+                            <td>
+                              {mode === 'TEMPLATE' ? (
+                                <select
+                                  className="fieldInput"
+                                  value={s.templateId ?? ''}
+                                  onChange={(e) => {
+                                    const tid = e.target.value || null
+                                    updateTomcatExpected(s.role, { templateId: tid, items: tid ? state.tomcatTemplates.find((t) => t.id === tid)?.items ?? [] : [] })
+                                  }}
+                                  aria-label={`Expected sets template for ${roleLabel(s.role)}`}
+                                >
+                                  <option value="">Select template…</option>
+                                  {state.tomcatTemplates.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                      {t.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="muted">—</span>
+                              )}
+                            </td>
+                            <td style={{ minWidth: 340 }}>
+                              {mode === 'EXPLICIT' ? (
+                                <textarea
+                                  className="fieldInput"
+                                  style={{ minHeight: 78 }}
+                                  value={itemsText}
+                                  onChange={(e) => updateTomcatExpected(s.role, { items: parseLines(e.target.value) })}
+                                  aria-label={`Expected webapp paths for ${roleLabel(s.role)}`}
+                                />
+                              ) : mode === 'TEMPLATE' ? (
+                                <textarea className="fieldInput" style={{ minHeight: 78 }} value={s.items.join('\n') || '—'} readOnly />
+                              ) : (
+                                <span className="muted">Disabled.</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="card" style={{ marginTop: 12, padding: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontWeight: 900 }}>Docker services</div>
+              <button
+                type="button"
+                className="button"
+                style={{ marginLeft: 'auto' }}
+                disabled={savingExpectedDocker || !expectedDockerDraft}
+                onClick={() => {
+                  if (!expectedDockerDraft) return
+                  setExpectedDockerError(null)
+                  const s = expectedDockerDraft
+
+                  if (s.mode === 'TEMPLATE' && !s.templateId) {
+                    setExpectedDockerError('Template is required in Template mode')
+                    return
+                  }
+                  if (s.mode === 'EXPLICIT') {
+                    const items = s.items.map((i) => i.trim()).filter((i) => i.length > 0)
+                    if (items.length === 0) {
+                      setExpectedDockerError('Items cannot be empty in Explicit mode')
+                      return
+                    }
+                  }
+
+                  const controller = new AbortController()
+                  setSavingExpectedDocker(true)
+                  replaceServerDockerExpectedServicesSpec(
+                    environmentId,
+                    serverId,
+                    {
+                      specs:
+                        s.mode === 'UNCONFIGURED'
+                          ? []
+                          : [
+                              {
+                                serverId,
+                                mode: s.mode,
+                                templateId: s.mode === 'TEMPLATE' ? s.templateId : null,
+                                items: s.mode === 'EXPLICIT' ? s.items : [],
+                              },
+                            ],
+                    },
+                    controller.signal,
+                  )
+                    .then((updated) => setExpectedDockerDraft(updated))
+                    .catch((e) => setExpectedDockerError(e instanceof Error ? e.message : 'Request failed'))
+                    .finally(() => setSavingExpectedDocker(false))
+                }}
+              >
+                {savingExpectedDocker ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+
+            {expectedDockerError ? (
+              <div className="muted" style={{ marginTop: 8 }}>
+                Error: {expectedDockerError}
+              </div>
+            ) : null}
+
+            {expectedDockerDraft ? (
+              <div style={{ marginTop: 10, display: 'grid', gap: 10, maxWidth: 980 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10, alignItems: 'end' }}>
+                  <label className="field">
+                    <div className="fieldLabel">Mode</div>
+                    <select
+                      className="fieldInput"
+                      value={expectedDockerDraft.mode}
+                      onChange={(e) => {
+                        const nextMode = e.target.value as ExpectedSetMode
+                        updateDockerExpected({ mode: nextMode, templateId: null, items: [] })
+                      }}
+                      aria-label="Docker expected sets mode"
+                    >
+                      <option value="UNCONFIGURED">Disabled</option>
+                      <option value="EXPLICIT">Explicit</option>
+                      <option value="TEMPLATE">Template</option>
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <div className="fieldLabel">Template</div>
+                    {expectedDockerDraft.mode === 'TEMPLATE' ? (
+                      <select
+                        className="fieldInput"
+                        value={expectedDockerDraft.templateId ?? ''}
+                        onChange={(e) => {
+                          const tid = e.target.value || null
+                          const items = tid ? state.dockerTemplates.find((t) => t.id === tid)?.items ?? [] : []
+                          updateDockerExpected({ templateId: tid, items })
+                        }}
+                        aria-label="Docker expected sets template"
+                      >
+                        <option value="">Select template…</option>
+                        {state.dockerTemplates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input className="fieldInput" value="—" readOnly aria-label="Docker template (disabled)" />
+                    )}
+                  </label>
+                </div>
+
+                <label className="field">
+                  <div className="fieldLabel">Items</div>
+                  {expectedDockerDraft.mode === 'EXPLICIT' ? (
+                    <textarea
+                      className="fieldInput"
+                      style={{ minHeight: 92 }}
+                      value={expectedDockerDraft.items.join('\n')}
+                      onChange={(e) => updateDockerExpected({ items: parseLines(e.target.value) })}
+                      aria-label="Expected docker service profiles"
+                    />
+                  ) : expectedDockerDraft.mode === 'TEMPLATE' ? (
+                    <textarea className="fieldInput" style={{ minHeight: 92 }} value={expectedDockerDraft.items.join('\n') || '—'} readOnly />
+                  ) : (
+                    <textarea className="fieldInput" style={{ minHeight: 92 }} value="Disabled." readOnly />
+                  )}
+                </label>
+              </div>
+            ) : (
+              <div className="muted" style={{ marginTop: 10 }}>
+                Loading…
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
 
@@ -607,4 +963,3 @@ export function EnvironmentServerPage() {
     </div>
   )
 }
-

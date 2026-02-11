@@ -109,6 +109,35 @@ public class DockerExpectedServicesSpecService {
         return List.copyOf(result);
     }
 
+    @Transactional(readOnly = true)
+    public DockerExpectedServicesSpecDto getForServer(UUID environmentId, UUID serverId) {
+        requireEnvironment(environmentId);
+        requireServer(environmentId, serverId);
+
+        Map<UUID, DockerExpectedServiceSpecEntity> specByServerId = specRepository.findByServerIdIn(List.of(serverId)).stream()
+                .collect(java.util.stream.Collectors.toMap(DockerExpectedServiceSpecEntity::getServerId, Function.identity(), (a, b) -> a));
+
+        Map<UUID, List<String>> explicitByServerId = explicitRepository.findByServerIdIn(List.of(serverId)).stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        DockerExpectedServiceEntity::getServerId,
+                        java.util.stream.Collectors.mapping(DockerExpectedServiceEntity::getProfile, java.util.stream.Collectors.toList())
+                ));
+
+        DockerExpectedServiceSpecEntity spec = specByServerId.get(serverId);
+        ExpectedSetMode mode = spec == null ? ExpectedSetMode.UNCONFIGURED : spec.getMode();
+        UUID templateId = spec == null ? null : spec.getTemplateId();
+
+        List<String> items;
+        if (mode == ExpectedSetMode.TEMPLATE && templateId != null) {
+            items = templateItemRepository.findByTemplateIdIn(List.of(templateId)).stream()
+                    .map(ExpectedSetTemplateItemEntity::getValue)
+                    .toList();
+        } else {
+            items = explicitByServerId.getOrDefault(serverId, List.of());
+        }
+        return new DockerExpectedServicesSpecDto(serverId, mode, templateId, List.copyOf(items));
+    }
+
     @Transactional
     public List<DockerExpectedServicesSpecDto> replace(UUID environmentId, DockerExpectedServicesSpecReplaceRequestDto request) {
         requireEnvironment(environmentId);
@@ -181,9 +210,71 @@ public class DockerExpectedServicesSpecService {
         return list(environmentId);
     }
 
+    @Transactional
+    public DockerExpectedServicesSpecDto replaceForServer(UUID environmentId, UUID serverId, DockerExpectedServicesSpecReplaceRequestDto request) {
+        requireEnvironment(environmentId);
+        validateReplaceRequest(request);
+        requireServer(environmentId, serverId);
+
+        List<DockerExpectedServicesSpecDto> specs = request.specs() == null ? List.of() : request.specs();
+        if (specs.size() > 1) {
+            throw new ResponseStatusException(BAD_REQUEST, "specs must contain at most one item for server");
+        }
+
+        DockerExpectedServicesSpecDto s = specs.isEmpty() ? null : specs.getFirst();
+        if (s != null) {
+            if (s.serverId() == null) throw new ResponseStatusException(BAD_REQUEST, "serverId is required");
+            if (!s.serverId().equals(serverId)) throw new ResponseStatusException(BAD_REQUEST, "serverId must match path param");
+            if (s.mode() == null) throw new ResponseStatusException(BAD_REQUEST, "mode is required");
+            if (s.mode() == ExpectedSetMode.UNCONFIGURED) throw new ResponseStatusException(BAD_REQUEST, "mode cannot be UNCONFIGURED");
+
+            if (s.mode() == ExpectedSetMode.TEMPLATE) {
+                if (s.templateId() == null) throw new ResponseStatusException(BAD_REQUEST, "templateId is required for TEMPLATE mode");
+                ExpectedSetTemplateEntity t = templateRepository.findById(s.templateId())
+                        .orElseThrow(() -> new ResponseStatusException(BAD_REQUEST, "Template not found: " + s.templateId()));
+                if (t.getKind() != ExpectedSetTemplateKind.DOCKER_SERVICE_PROFILE) {
+                    throw new ResponseStatusException(BAD_REQUEST, "Template kind mismatch (expected DOCKER_SERVICE_PROFILE): " + s.templateId());
+                }
+                if (s.items() != null && !s.items().isEmpty()) {
+                    throw new ResponseStatusException(BAD_REQUEST, "items must be empty in TEMPLATE mode");
+                }
+            } else if (s.mode() == ExpectedSetMode.EXPLICIT) {
+                if (s.templateId() != null) throw new ResponseStatusException(BAD_REQUEST, "templateId must be null in EXPLICIT mode");
+                validateProfiles(s.items() == null ? List.of() : s.items());
+            }
+        }
+
+        specRepository.deleteByServerId(serverId);
+        explicitRepository.deleteByServerId(serverId);
+
+        if (s != null) {
+            Instant now = Instant.now();
+            specRepository.save(new DockerExpectedServiceSpecEntity(UUID.randomUUID(), serverId, s.mode(), s.templateId(), now));
+            if (s.mode() == ExpectedSetMode.EXPLICIT) {
+                List<DockerExpectedServiceEntity> items = new ArrayList<>();
+                for (String raw : (s.items() == null ? List.<String>of() : s.items())) {
+                    String profile = raw == null ? "" : raw.trim();
+                    if (profile.isEmpty()) continue;
+                    items.add(new DockerExpectedServiceEntity(UUID.randomUUID(), serverId, profile, now));
+                }
+                explicitRepository.saveAll(items);
+            }
+        }
+
+        return getForServer(environmentId, serverId);
+    }
+
     private void requireEnvironment(UUID environmentId) {
         if (!environmentRepository.existsById(environmentId)) {
             throw new ResponseStatusException(NOT_FOUND, "Environment not found");
+        }
+    }
+
+    private void requireServer(UUID environmentId, UUID serverId) {
+        ServerEntity srv = serverRepository.findById(serverId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Server not found"));
+        if (!srv.getEnvironmentId().equals(environmentId)) {
+            throw new ResponseStatusException(NOT_FOUND, "Server not found");
         }
     }
 
@@ -206,4 +297,3 @@ public class DockerExpectedServicesSpecService {
         }
     }
 }
-

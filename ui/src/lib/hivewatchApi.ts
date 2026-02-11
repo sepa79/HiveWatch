@@ -352,6 +352,31 @@ export async function replaceTomcatExpectedWebappsSpecs(
   )
 }
 
+export async function fetchServerTomcatExpectedWebappsSpecs(
+  environmentId: string,
+  serverId: string,
+  signal?: AbortSignal,
+): Promise<TomcatExpectedWebappsSpec[]> {
+  const response = await fetch(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(serverId)}/expected/tomcat-webapps`,
+    { signal, headers: withDevAuthHeaders() },
+  )
+  return readJsonOrThrow<TomcatExpectedWebappsSpec[]>(response)
+}
+
+export async function replaceServerTomcatExpectedWebappsSpecs(
+  environmentId: string,
+  serverId: string,
+  request: TomcatExpectedWebappsSpecReplaceRequest,
+  signal?: AbortSignal,
+): Promise<TomcatExpectedWebappsSpec[]> {
+  return putJsonOrThrow<TomcatExpectedWebappsSpec[]>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(serverId)}/expected/tomcat-webapps`,
+    request,
+    signal,
+  )
+}
+
 export async function fetchDockerExpectedServicesSpecs(
   environmentId: string,
   signal?: AbortSignal,
@@ -370,6 +395,31 @@ export async function replaceDockerExpectedServicesSpecs(
 ): Promise<DockerExpectedServicesSpec[]> {
   return putJsonOrThrow<DockerExpectedServicesSpec[]>(
     `/api/v1/environments/${encodeURIComponent(environmentId)}/expected/docker-services`,
+    request,
+    signal,
+  )
+}
+
+export async function fetchServerDockerExpectedServicesSpec(
+  environmentId: string,
+  serverId: string,
+  signal?: AbortSignal,
+): Promise<DockerExpectedServicesSpec> {
+  const response = await fetch(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(serverId)}/expected/docker-services`,
+    { signal, headers: withDevAuthHeaders() },
+  )
+  return readJsonOrThrow<DockerExpectedServicesSpec>(response)
+}
+
+export async function replaceServerDockerExpectedServicesSpec(
+  environmentId: string,
+  serverId: string,
+  request: DockerExpectedServicesSpecReplaceRequest,
+  signal?: AbortSignal,
+): Promise<DockerExpectedServicesSpec> {
+  return putJsonOrThrow<DockerExpectedServicesSpec>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(serverId)}/expected/docker-services`,
     request,
     signal,
   )

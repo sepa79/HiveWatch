@@ -505,8 +505,8 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
           ) : null}
           {view === 'expected-sets' ? (
             <>
-              Expected sets define what should exist: Tomcat webapp paths (per Server+Role) and Docker service profiles (per Docker server). Use <code>EXPLICIT</code>{' '}
-              for a custom list, or <code>TEMPLATE</code> to pick a reusable template. Saving is blocked if any spec is <code>UNCONFIGURED</code>.
+              Expected sets define what should exist (for missing checks on the Dashboard). Configure them per Server (open a Server and edit Expected sets there). Use{' '}
+              <code>EXPLICIT</code> for a custom list, or <code>TEMPLATE</code> to pick a reusable template.
             </>
           ) : null}
           {view === 'templates' ? (
@@ -695,270 +695,56 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
       ) : null}
 
       {state.kind === 'ready' && view === 'expected-sets' ? (
-        <div className="card" style={{ marginTop: 12 }}>
-          <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div className="h2" style={{ margin: 0 }}>
-                Expected sets (Tomcats)
-              </div>
-              <button type="button" className="button" style={{ marginLeft: 'auto' }} onClick={saveTomcatExpectedSpecs} disabled={savingExpectedTomcat}>
-                {savingExpectedTomcat ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Explicit lists or templates (per <code>Server</code> + <code>Role</code>) used to flag missing webapps on the Dashboard.
-            </div>
-
-            {expectedTomcatError ? (
-              <div className="muted" style={{ marginTop: 8 }}>
-                Error: {expectedTomcatError}
-              </div>
-            ) : null}
-
-            {tomcatExpectedSpecsDraft.length === 0 ? (
-              <div className="muted" style={{ marginTop: 10 }}>
-                No Tomcat targets, so there are no expected-set specs yet.
-              </div>
-            ) : (
-              <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-                {state.servers
-                  .filter((srv) => tomcatExpectedSpecsDraft.some((s) => s.serverId === srv.id))
-                  .map((srv) => {
-                    const specs = tomcatExpectedSpecsDraft
-                      .filter((s) => s.serverId === srv.id)
-                      .slice()
-                      .sort((a, b) => a.role.localeCompare(b.role))
-                    return (
-                      <div key={srv.id} className="card" style={{ padding: 12 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{ fontWeight: 900 }}>{srv.name}</div>
-                          <div className="muted">{specs.length} sets</div>
-                          <button
-                            type="button"
-                            className="button"
-                            style={{ marginLeft: 'auto' }}
-                            onClick={() =>
-                              navigate(
-                                `/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(srv.id)}`,
-                              )
-                            }
-                          >
-                            Open server
-                          </button>
-                        </div>
-                        <div className="tableWrap" style={{ marginTop: 10 }}>
-                          <table className="table">
-                            <thead>
-                              <tr>
-                                <th>Set</th>
-                                <th>Mode</th>
-                                <th>Template</th>
-                                <th>Items</th>
-                                <th />
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {specs.map((s) => {
-                                const templateName =
-                                  s.templateId ? state.tomcatTemplates.find((t) => t.id === s.templateId)?.name ?? s.templateId : '—'
-                                const itemsText = s.items.join('\n')
-                                const mode = s.mode
-                                return (
-                                  <tr key={`${s.serverId}:${s.role}`}>
-                                    <td style={{ fontWeight: 800 }}>{roleLabel(s.role)}</td>
-                                    <td>
-                                      <select
-                                        className="fieldInput"
-                                        value={mode}
-                                        onChange={(e) => {
-                                          const nextMode = e.target.value as ExpectedSetMode
-                                          setTomcatSpec({ serverId: s.serverId, role: s.role }, { mode: nextMode })
-                                          setTomcatSpec({ serverId: s.serverId, role: s.role }, { templateId: null })
-                                        }}
-                                      >
-                                        {mode === 'UNCONFIGURED' ? (
-                                          <option value="UNCONFIGURED" disabled>
-                                            UNCONFIGURED
-                                          </option>
-                                        ) : null}
-                                        <option value="EXPLICIT">EXPLICIT</option>
-                                        <option value="TEMPLATE">TEMPLATE</option>
-                                      </select>
-                                    </td>
-                                    <td>
-                                      {mode === 'TEMPLATE' ? (
-                                        <select
-                                          className="fieldInput"
-                                          value={s.templateId ?? ''}
-                                          onChange={(e) => {
-                                            const tid = e.target.value || null
-                                            const items = tid ? state.tomcatTemplates.find((t) => t.id === tid)?.items ?? [] : []
-                                            setTomcatSpec({ serverId: s.serverId, role: s.role }, { templateId: tid, items })
-                                          }}
-                                        >
-                                          <option value="">— select —</option>
-                                          {state.tomcatTemplates.map((t) => (
-                                            <option key={t.id} value={t.id}>
-                                              {t.name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <span className="muted">{templateName}</span>
-                                      )}
-                                    </td>
-                                    <td style={{ minWidth: 360 }}>
-                                      {mode === 'EXPLICIT' ? (
-                                        <textarea
-                                          className="fieldInput"
-                                          style={{ minHeight: 78 }}
-                                          value={itemsText}
-                                          onChange={(e) =>
-                                            setTomcatSpec({ serverId: s.serverId, role: s.role }, { items: parseLines(e.target.value) })
-                                          }
-                                          aria-label={`Expected webapps for ${srv.name} ${roleLabel(s.role)}`}
-                                        />
-                                      ) : (
-                                        <textarea className="fieldInput" style={{ minHeight: 78 }} value={itemsText || '—'} readOnly />
-                                      )}
-                                    </td>
-                                    <td style={{ whiteSpace: 'nowrap' }}>
-                                      <button
-                                        type="button"
-                                        className="button"
-                                        onClick={() => setTomcatSpec({ serverId: s.serverId, role: s.role }, { mode: 'EXPLICIT', templateId: null, items: [] })}
-                                      >
-                                        Clear
-                                      </button>
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )
-                  })}
-              </div>
-            )}
+        <div className="card" style={{ marginTop: 12, padding: 12 }}>
+          <div className="h2" style={{ margin: 0 }}>
+            Expected sets
+          </div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            Expected sets are configured per Server. Use the Servers list below to open a Server and edit its Expected sets.
+          </div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            Templates are managed on the <code>Templates</code> tab.
           </div>
 
-          <div className="card" style={{ padding: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div className="h2" style={{ margin: 0 }}>
-                Expected sets (Docker microservices)
-              </div>
-              <button type="button" className="button" style={{ marginLeft: 'auto' }} onClick={saveDockerExpectedSpecs} disabled={savingExpectedDocker}>
-                {savingExpectedDocker ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Explicit lists or templates (per Docker server) used to flag missing services on the Dashboard.
-            </div>
-
-            {expectedDockerError ? (
-              <div className="muted" style={{ marginTop: 8 }}>
-                Error: {expectedDockerError}
-              </div>
-            ) : null}
-
-            <div className="tableWrap" style={{ marginTop: 10 }}>
-              <table className="table">
-                <thead>
+          <div className="tableWrap" style={{ marginTop: 12 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Server</th>
+                  <th>Tomcat roles</th>
+                  <th>Microservices</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {state.servers.length === 0 ? (
                   <tr>
-                    <th>Server</th>
-                    <th>Mode</th>
-                    <th>Template</th>
-                    <th>Items</th>
+                    <td colSpan={4} className="muted">
+                      No servers yet.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    const dockerServerIds = new Set(state.actuatorTargets.map((t) => t.serverId))
-                    const rows = dockerExpectedSpecsDraft.filter((s) => dockerServerIds.has(s.serverId))
-                    if (rows.length === 0) {
-                      return (
-                        <tr>
-                          <td colSpan={4} className="muted">
-                            No Docker targets, so there are no expected-set specs yet.
-                          </td>
-                        </tr>
-                      )
-                    }
-
-                    return rows
-                      .sort((a, b) => {
-                        const as = state.servers.find((srv) => srv.id === a.serverId)?.name ?? a.serverId
-                        const bs = state.servers.find((srv) => srv.id === b.serverId)?.name ?? b.serverId
-                        return as.localeCompare(bs)
-                      })
-                      .map((s) => {
-                        const serverName = state.servers.find((srv) => srv.id === s.serverId)?.name ?? s.serverId
-                        const templateName =
-                          s.templateId ? state.dockerTemplates.find((t) => t.id === s.templateId)?.name ?? s.templateId : '—'
-                        const itemsText = s.items.join('\n')
-                        const mode = s.mode
-                        return (
-                          <tr key={s.serverId}>
-                            <td style={{ fontWeight: 800 }}>{serverName}</td>
-                            <td>
-                              <select
-                                className="fieldInput"
-                                value={mode}
-                                onChange={(e) => {
-                                  const nextMode = e.target.value as ExpectedSetMode
-                                  setDockerSpec(s.serverId, { mode: nextMode })
-                                  setDockerSpec(s.serverId, { templateId: null })
-                                }}
-                              >
-                                <option value="UNCONFIGURED">UNCONFIGURED</option>
-                                <option value="EXPLICIT">EXPLICIT</option>
-                                <option value="TEMPLATE">TEMPLATE</option>
-                              </select>
-                            </td>
-                            <td>
-                              {mode === 'TEMPLATE' ? (
-                                <select
-                                  className="fieldInput"
-                                  value={s.templateId ?? ''}
-                                  onChange={(e) => {
-                                    const tid = e.target.value || null
-                                    const items = tid ? state.dockerTemplates.find((t) => t.id === tid)?.items ?? [] : []
-                                    setDockerSpec(s.serverId, { templateId: tid, items })
-                                  }}
-                                >
-                                  <option value="">— select —</option>
-                                  {state.dockerTemplates.map((t) => (
-                                    <option key={t.id} value={t.id}>
-                                      {t.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span className="muted">{templateName}</span>
-                              )}
-                            </td>
-                            <td style={{ minWidth: 360 }}>
-                              {mode === 'EXPLICIT' ? (
-                                <textarea
-                                  className="fieldInput"
-                                  style={{ minHeight: 78 }}
-                                  value={itemsText}
-                                  onChange={(e) => setDockerSpec(s.serverId, { items: parseLines(e.target.value) })}
-                                  aria-label={`Expected services for ${serverName}`}
-                                />
-                              ) : (
-                                <textarea className="fieldInput" style={{ minHeight: 78 }} value={itemsText || '—'} readOnly />
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })
-                  })()}
-                </tbody>
-              </table>
-            </div>
+                ) : null}
+                {state.servers
+                  .slice()
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((srv) => {
+                    const roles = new Set(state.targets.filter((t) => t.serverId === srv.id).map((t) => t.role))
+                    const micro = state.actuatorTargets.filter((t) => t.serverId === srv.id).length
+                    return (
+                      <tr key={srv.id}>
+                        <td style={{ fontWeight: 900 }}>{srv.name}</td>
+                        <td className="muted">{roles.size}</td>
+                        <td className="muted">{micro}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <Link className="button" to={`/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(srv.id)}#expected-sets`}>
+                            Edit
+                          </Link>
+                        </td>
+                      </tr>
+                    )
+                  })}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : null}
