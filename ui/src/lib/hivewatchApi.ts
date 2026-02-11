@@ -14,6 +14,12 @@ export type DashboardEnvironment = {
   tomcatWebappsTotal: number
   tomcatLastScanAt: string | null
   tomcatStatus: TomcatEnvironmentStatus
+  actuatorTargets: number
+  actuatorUp: number
+  actuatorDown: number
+  actuatorError: number
+  actuatorLastScanAt: string | null
+  actuatorStatus: TomcatEnvironmentStatus
 }
 
 export type TomcatScanOutcomeKind = 'SUCCESS' | 'ERROR'
@@ -45,6 +51,38 @@ export type TomcatTargetCreateRequest = {
   port: number
   username: string
   password: string
+  connectTimeoutMs: number
+  requestTimeoutMs: number
+}
+
+export type ActuatorTargetState = {
+  scannedAt: string
+  outcomeKind: TomcatScanOutcomeKind
+  errorKind: TomcatScanErrorKind | null
+  errorMessage: string | null
+  healthStatus: string | null
+  appName: string | null
+  cpuUsage: number | null
+  memoryUsedBytes: number | null
+}
+
+export type ActuatorTarget = {
+  id: string
+  serverId: string
+  serverName: string
+  role: TomcatRole
+  baseUrl: string
+  port: number
+  profile: string
+  state: ActuatorTargetState | null
+}
+
+export type ActuatorTargetCreateRequest = {
+  serverId: string
+  role: TomcatRole
+  baseUrl: string
+  port: number
+  profile: string
   connectTimeoutMs: number
   requestTimeoutMs: number
 }
@@ -122,6 +160,23 @@ export async function createTomcatTarget(
 
 export async function scanEnvironmentTomcats(environmentId: string, signal?: AbortSignal): Promise<TomcatTarget[]> {
   return postJsonOrThrow<TomcatTarget[]>(`/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-targets/scan`, undefined, signal)
+}
+
+export async function fetchActuatorTargets(environmentId: string, signal?: AbortSignal): Promise<ActuatorTarget[]> {
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets`, { signal })
+  return readJsonOrThrow<ActuatorTarget[]>(response)
+}
+
+export async function createActuatorTarget(
+  environmentId: string,
+  request: ActuatorTargetCreateRequest,
+  signal?: AbortSignal,
+): Promise<ActuatorTarget> {
+  return postJsonOrThrow<ActuatorTarget>(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets`, request, signal)
+}
+
+export async function scanEnvironmentActuators(environmentId: string, signal?: AbortSignal): Promise<ActuatorTarget[]> {
+  return postJsonOrThrow<ActuatorTarget[]>(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets/scan`, undefined, signal)
 }
 
 export async function fetchUsers(signal?: AbortSignal): Promise<UserSummary[]> {

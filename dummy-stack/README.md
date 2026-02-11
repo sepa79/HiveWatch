@@ -51,6 +51,12 @@ Examples:
 - `http://localhost:19121/payments/actuator/health`
 - `http://localhost:19121/services/actuator/info`
 - `http://localhost:19121/auth/actuator/metrics/system.cpu.usage`
+- `http://localhost:19121/auth/actuator/metrics/jvm.memory.used`
+
+From inside Docker (shared `hivewatch-dev` network), actuator bases are:
+- `NFT-01`: `http://hc-dummy-nft-01-docker-swarm-microservices:8080/{profile}/actuator/...`
+- `NFT-02`: `http://hc-dummy-nft-02-docker-swarm-microservices:8080/{profile}/actuator/...`
+- `Release-01`: `http://hc-dummy-release-01-docker-swarm-microservices:8080/{profile}/actuator/...`
 
 ## 3) Next: wiring into Health Checker
 

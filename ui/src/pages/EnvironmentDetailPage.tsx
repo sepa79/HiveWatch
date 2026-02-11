@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
+  createActuatorTarget,
   createServer,
   createTomcatTarget,
+  fetchActuatorTargets,
   fetchServers,
   fetchTomcatTargets,
+  scanEnvironmentActuators,
   scanEnvironmentTomcats,
+  type ActuatorTarget,
+  type ActuatorTargetCreateRequest,
   type Server,
   type ServerCreateRequest,
   type TomcatTarget,
@@ -15,7 +20,7 @@ import {
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; servers: Server[]; targets: TomcatTarget[] }
+  | { kind: 'ready'; servers: Server[]; targets: TomcatTarget[]; actuatorTargets: ActuatorTarget[] }
   | { kind: 'error'; message: string }
 
 export function EnvironmentDetailPage() {
@@ -23,8 +28,10 @@ export function EnvironmentDetailPage() {
   const environmentId = params.environmentId ?? ''
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [saving, setSaving] = useState(false)
+  const [savingActuator, setSavingActuator] = useState(false)
   const [savingServer, setSavingServer] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [scanningActuators, setScanningActuators] = useState(false)
 
   const [form, setForm] = useState<TomcatTargetCreateRequest>({
     serverId: '',
@@ -37,11 +44,25 @@ export function EnvironmentDetailPage() {
     requestTimeoutMs: 5000,
   })
 
+  const [actuatorForm, setActuatorForm] = useState<ActuatorTargetCreateRequest>({
+    serverId: '',
+    role: 'PAYMENTS',
+    baseUrl: 'http://hc-dummy-nft-01-docker-swarm-microservices',
+    port: 8080,
+    profile: 'payments',
+    connectTimeoutMs: 1500,
+    requestTimeoutMs: 5000,
+  })
+
   const [serverForm, setServerForm] = useState<ServerCreateRequest>({ name: '' })
 
   const refresh = (signal?: AbortSignal) =>
-    Promise.all([fetchServers(environmentId, signal), fetchTomcatTargets(environmentId, signal)])
-      .then(([servers, targets]) => setState({ kind: 'ready', servers, targets }))
+    Promise.all([
+      fetchServers(environmentId, signal),
+      fetchTomcatTargets(environmentId, signal),
+      fetchActuatorTargets(environmentId, signal),
+    ])
+      .then(([servers, targets, actuatorTargets]) => setState({ kind: 'ready', servers, targets, actuatorTargets }))
       .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
 
   useEffect(() => {
@@ -59,8 +80,18 @@ export function EnvironmentDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
+  useEffect(() => {
+    if (state.kind !== 'ready') return
+    if (actuatorForm.serverId) return
+    if (state.servers.length === 0) return
+    const swarm = state.servers.find((s) => s.name.toLowerCase().includes('docker swarm'))
+    setActuatorForm((f) => ({ ...f, serverId: (swarm ?? state.servers[0]).id }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
+
   const title = useMemo(() => {
-    if (state.kind === 'ready') return `Environment · ${state.servers.length} servers · ${state.targets.length} Tomcat targets`
+    if (state.kind === 'ready')
+      return `Environment · ${state.servers.length} servers · ${state.targets.length} Tomcat targets · ${state.actuatorTargets.length} microservices`
     return 'Environment'
   }, [state])
 
@@ -70,6 +101,15 @@ export function EnvironmentDetailPage() {
     return <div className="pill" data-kind="alert">BLOCK</div>
   }
 
+  const actuatorPill = (t: ActuatorTarget) => {
+    if (!t.state) return <div className="pill" data-kind="missing">UNKNOWN</div>
+    if (t.state.outcomeKind === 'SUCCESS' && (t.state.healthStatus ?? '').toUpperCase() === 'UP') {
+      return <div className="pill" data-kind="ok">UP</div>
+    }
+    if (t.state.outcomeKind === 'SUCCESS') return <div className="pill" data-kind="alert">{t.state.healthStatus ?? 'DOWN'}</div>
+    return <div className="pill" data-kind="alert">ERROR</div>
+  }
+
   const roleLabel = (role: TomcatRole) => {
     const labels: Record<TomcatRole, string> = {
       PAYMENTS: 'payments',
@@ -77,6 +117,21 @@ export function EnvironmentDetailPage() {
       AUTH: 'auth',
     }
     return labels[role]
+  }
+
+  const formatCpu = (cpuUsage: number | null) => {
+    if (cpuUsage == null) return '—'
+    const pct = Math.round(cpuUsage * 1000) / 10
+    return `${pct}%`
+  }
+
+  const formatBytes = (bytes: number | null) => {
+    if (bytes == null) return '—'
+    if (!Number.isFinite(bytes)) return String(bytes)
+    const mb = bytes / (1024 * 1024)
+    if (mb < 1024) return `${Math.round(mb)} MB`
+    const gb = mb / 1024
+    return `${Math.round(gb * 10) / 10} GB`
   }
 
   const formatTs = (iso: string | null) => {
@@ -118,6 +173,20 @@ export function EnvironmentDetailPage() {
           >
             {scanning ? 'Scanning…' : 'Scan all targets'}
           </button>
+          <button
+            type="button"
+            className="button"
+            disabled={scanningActuators || state.kind !== 'ready' || state.actuatorTargets.length === 0}
+            onClick={() => {
+              const controller = new AbortController()
+              setScanningActuators(true)
+              scanEnvironmentActuators(environmentId, controller.signal)
+                .then(() => refresh())
+                .finally(() => setScanningActuators(false))
+            }}
+          >
+            {scanningActuators ? 'Scanning…' : 'Scan microservices'}
+          </button>
         </div>
 
         {state.kind === 'loading' ? <div className="muted" style={{ marginTop: 10 }}>Loading…</div> : null}
@@ -132,13 +201,17 @@ export function EnvironmentDetailPage() {
                 .filter((t) => t.serverId === server.id)
                 .slice()
                 .sort((a, b) => a.role.localeCompare(b.role))
+              const actuatorTargets = state.actuatorTargets
+                .filter((t) => t.serverId === server.id)
+                .slice()
+                .sort((a, b) => (a.profile + a.role).localeCompare(b.profile + b.role))
 
               return (
                 <details key={server.id} className="card" style={{ marginTop: 10, padding: 12 }}>
                   <summary style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ fontWeight: 800 }}>{server.name}</div>
                     <div className="muted" style={{ marginLeft: 'auto' }}>
-                      {targets.length} targets
+                      {targets.length} Tomcat · {actuatorTargets.length} microservices
                     </div>
                   </summary>
 
@@ -180,6 +253,48 @@ export function EnvironmentDetailPage() {
                           ))}
                         </ul>
                       ) : null}
+                    </details>
+                  ))}
+
+                  <div style={{ marginTop: 12, fontWeight: 800 }}>Microservices (Actuator)</div>
+                  {actuatorTargets.length === 0 ? (
+                    <div className="muted" style={{ marginTop: 10 }}>
+                      No microservices.
+                    </div>
+                  ) : null}
+
+                  {actuatorTargets.map((t) => (
+                    <details key={t.id} className="card" style={{ marginTop: 10, padding: 12 }}>
+                      <summary style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ fontWeight: 700 }}>{t.profile}</div>
+                        {actuatorPill(t)}
+                        <div className="muted" style={{ marginLeft: 'auto' }}>
+                          {t.baseUrl}:{t.port}
+                        </div>
+                      </summary>
+
+                      <div className="kv" style={{ marginTop: 10 }}>
+                        <div className="k">targetId</div>
+                        <div className="v">{t.id}</div>
+                        <div className="k">lastScan</div>
+                        <div className="v">{t.state ? formatTs(t.state.scannedAt) : '—'}</div>
+                        <div className="k">health</div>
+                        <div className="v">{t.state?.healthStatus ?? '—'}</div>
+                        <div className="k">app</div>
+                        <div className="v">{t.state?.appName ?? '—'}</div>
+                        <div className="k">cpu</div>
+                        <div className="v">{formatCpu(t.state?.cpuUsage ?? null)}</div>
+                        <div className="k">memory</div>
+                        <div className="v">{formatBytes(t.state?.memoryUsedBytes ?? null)}</div>
+                        {t.state && t.state.outcomeKind === 'ERROR' ? (
+                          <>
+                            <div className="k">error</div>
+                            <div className="v">
+                              {t.state.errorKind}: {t.state.errorMessage}
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
                     </details>
                   ))}
                 </details>
@@ -336,6 +451,120 @@ export function EnvironmentDetailPage() {
             <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
               <button type="submit" className="button" disabled={saving}>
                 {saving ? 'Saving…' : 'Add target'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="card" style={{ marginTop: 12, padding: 12, maxWidth: 820 }}>
+          <div className="h2">Add microservice (Actuator target)</div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            Scanner calls <code>/{'{'}profile{'}'}/actuator/*</code>. <code>baseUrl</code> must be absolute and must not include port/path.
+          </div>
+
+          <form
+            style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
+            onSubmit={(e) => {
+              e.preventDefault()
+              const controller = new AbortController()
+              setSavingActuator(true)
+              createActuatorTarget(environmentId, actuatorForm, controller.signal)
+                .then(() => refresh())
+                .finally(() => setSavingActuator(false))
+            }}
+          >
+            <label className="field">
+              <div className="fieldLabel">Server</div>
+              <select
+                className="fieldInput"
+                value={actuatorForm.serverId}
+                onChange={(e) => setActuatorForm((f) => ({ ...f, serverId: e.target.value }))}
+                required
+              >
+                <option value="" disabled>
+                  Select server…
+                </option>
+                {state.kind === 'ready'
+                  ? state.servers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))
+                  : null}
+              </select>
+            </label>
+            <label className="field">
+              <div className="fieldLabel">Role</div>
+              <select
+                className="fieldInput"
+                value={actuatorForm.role}
+                onChange={(e) => setActuatorForm((f) => ({ ...f, role: e.target.value as TomcatRole }))}
+                required
+              >
+                <option value="PAYMENTS">payments</option>
+                <option value="SERVICES">services</option>
+                <option value="AUTH">auth</option>
+              </select>
+            </label>
+            <label className="field">
+              <div className="fieldLabel">Base URL</div>
+              <input
+                className="fieldInput"
+                value={actuatorForm.baseUrl}
+                onChange={(e) => setActuatorForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                placeholder="http://hc-dummy-nft-01-docker-swarm-microservices"
+                required
+              />
+            </label>
+            <label className="field">
+              <div className="fieldLabel">Port</div>
+              <input
+                className="fieldInput"
+                type="number"
+                value={actuatorForm.port}
+                onChange={(e) => setActuatorForm((f) => ({ ...f, port: Number(e.target.value) }))}
+                min={1}
+                max={65535}
+                required
+              />
+            </label>
+            <label className="field">
+              <div className="fieldLabel">Profile</div>
+              <input
+                className="fieldInput"
+                value={actuatorForm.profile}
+                onChange={(e) => setActuatorForm((f) => ({ ...f, profile: e.target.value }))}
+                placeholder="payments"
+                required
+              />
+            </label>
+            <div />
+            <label className="field">
+              <div className="fieldLabel">Connect timeout (ms)</div>
+              <input
+                className="fieldInput"
+                type="number"
+                value={actuatorForm.connectTimeoutMs}
+                onChange={(e) => setActuatorForm((f) => ({ ...f, connectTimeoutMs: Number(e.target.value) }))}
+                min={1}
+                required
+              />
+            </label>
+            <label className="field">
+              <div className="fieldLabel">Request timeout (ms)</div>
+              <input
+                className="fieldInput"
+                type="number"
+                value={actuatorForm.requestTimeoutMs}
+                onChange={(e) => setActuatorForm((f) => ({ ...f, requestTimeoutMs: Number(e.target.value) }))}
+                min={1}
+                required
+              />
+            </label>
+
+            <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
+              <button type="submit" className="button" disabled={savingActuator}>
+                {savingActuator ? 'Saving…' : 'Add microservice'}
               </button>
             </div>
           </form>

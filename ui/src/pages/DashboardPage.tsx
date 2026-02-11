@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  fetchActuatorTargets,
   fetchDashboardEnvironments,
   fetchTomcatTargets,
+  scanEnvironmentActuators,
   scanEnvironmentTomcats,
+  type ActuatorTarget,
   type DashboardEnvironment,
   type TomcatTarget,
 } from '../lib/hivewatchApi'
@@ -19,10 +22,18 @@ type EnvTargetsState =
   | { kind: 'ready'; targets: TomcatTarget[] }
   | { kind: 'error'; message: string }
 
+type EnvActuatorTargetsState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ready'; targets: ActuatorTarget[] }
+  | { kind: 'error'; message: string }
+
 export function DashboardPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [scanningEnvId, setScanningEnvId] = useState<string | null>(null)
+  const [scanningActuatorEnvId, setScanningActuatorEnvId] = useState<string | null>(null)
   const [envTargets, setEnvTargets] = useState<Record<string, EnvTargetsState>>({})
+  const [envActuatorTargets, setEnvActuatorTargets] = useState<Record<string, EnvActuatorTargetsState>>({})
 
   const refresh = useCallback((signal?: AbortSignal) => {
     return fetchDashboardEnvironments(signal)
@@ -48,30 +59,32 @@ export function DashboardPage() {
     return date.toLocaleString()
   }
 
-  const pill = (env: DashboardEnvironment) => {
-    switch (env.tomcatStatus) {
+  const pill = (label: string, status: DashboardEnvironment['tomcatStatus']) => {
+    switch (status) {
       case 'OK':
         return (
           <div className="pill" data-kind="ok">
-            OK
+            {label} OK
           </div>
         )
       case 'BLOCK':
         return (
           <div className="pill" data-kind="alert">
-            BLOCK
+            {label} BLOCK
           </div>
         )
       default:
         return (
           <div className="pill" data-kind="missing">
-            UNKNOWN
+            {label} UNKNOWN
           </div>
         )
     }
   }
 
   const getEnvTargetsState = (envId: string): EnvTargetsState => envTargets[envId] ?? { kind: 'idle' }
+  const getEnvActuatorTargetsState = (envId: string): EnvActuatorTargetsState =>
+    envActuatorTargets[envId] ?? { kind: 'idle' }
 
   const loadEnvTargets = (envId: string) => {
     if (getEnvTargetsState(envId).kind === 'loading' || getEnvTargetsState(envId).kind === 'ready') return
@@ -81,6 +94,20 @@ export function DashboardPage() {
       .then((targets) => setEnvTargets((prev) => ({ ...prev, [envId]: { kind: 'ready', targets } })))
       .catch((e) =>
         setEnvTargets((prev) => ({
+          ...prev,
+          [envId]: { kind: 'error', message: e instanceof Error ? e.message : 'Request failed' },
+        })),
+      )
+  }
+
+  const loadEnvActuatorTargets = (envId: string) => {
+    if (getEnvActuatorTargetsState(envId).kind === 'loading' || getEnvActuatorTargetsState(envId).kind === 'ready') return
+    const controller = new AbortController()
+    setEnvActuatorTargets((prev) => ({ ...prev, [envId]: { kind: 'loading' } }))
+    fetchActuatorTargets(envId, controller.signal)
+      .then((targets) => setEnvActuatorTargets((prev) => ({ ...prev, [envId]: { kind: 'ready', targets } })))
+      .catch((e) =>
+        setEnvActuatorTargets((prev) => ({
           ...prev,
           [envId]: { kind: 'error', message: e instanceof Error ? e.message : 'Request failed' },
         })),
@@ -108,7 +135,10 @@ export function DashboardPage() {
                 style={{ marginTop: 10, padding: 12 }}
                 onToggle={(e) => {
                   const el = e.currentTarget
-                  if (el.open) loadEnvTargets(env.id)
+                  if (el.open) {
+                    loadEnvTargets(env.id)
+                    loadEnvActuatorTargets(env.id)
+                  }
                 }}
               >
                 <summary style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -117,7 +147,8 @@ export function DashboardPage() {
                       {env.name}
                     </Link>
                   </div>
-                  {pill(env)}
+                  {pill('T', env.tomcatStatus)}
+                  {pill('MS', env.actuatorStatus)}
 
                   <button
                     type="button"
@@ -136,6 +167,22 @@ export function DashboardPage() {
                   >
                     {scanningEnvId === env.id ? 'Scanning…' : 'Scan Tomcats'}
                   </button>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={scanningActuatorEnvId === env.id}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      const controller = new AbortController()
+                      setScanningActuatorEnvId(env.id)
+                      scanEnvironmentActuators(env.id, controller.signal)
+                        .then(() => refresh())
+                        .finally(() => setScanningActuatorEnvId((current) => (current === env.id ? null : current)))
+                    }}
+                  >
+                    {scanningActuatorEnvId === env.id ? 'Scanning…' : 'Scan Microservices'}
+                  </button>
                 </summary>
                 <div className="kv" style={{ marginTop: 10 }}>
                   <div className="k">tomcatTargets</div>
@@ -147,6 +194,14 @@ export function DashboardPage() {
                   <div className="k">ok / error</div>
                   <div className="v">
                     {env.tomcatOk} / {env.tomcatError}
+                  </div>
+                  <div className="k">microservices</div>
+                  <div className="v">{env.actuatorTargets}</div>
+                  <div className="k">ms lastScan</div>
+                  <div className="v">{formatTs(env.actuatorLastScanAt)}</div>
+                  <div className="k">up / down / err</div>
+                  <div className="v">
+                    {env.actuatorUp} / {env.actuatorDown} / {env.actuatorError}
                   </div>
                 </div>
 
@@ -187,6 +242,55 @@ export function DashboardPage() {
                                     t.state.outcomeKind === 'SUCCESS' ? (
                                       <span>
                                         OK · {t.state.webapps.length} webapps
+                                      </span>
+                                    ) : (
+                                      <span>
+                                        ERROR · {t.state.errorKind}: {t.state.errorMessage}
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="muted">Not scanned yet</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                ) : null}
+
+                {env.actuatorTargets > 0 ? (
+                  <div style={{ marginTop: 10 }}>
+                    {(() => {
+                      const astate = getEnvActuatorTargetsState(env.id)
+                      if (astate.kind === 'idle') {
+                        return <div className="muted">Expand to load microservices…</div>
+                      }
+                      if (astate.kind === 'loading') {
+                        return <div className="muted">Loading microservices…</div>
+                      }
+                      if (astate.kind === 'error') {
+                        return <div className="muted">Error: {astate.message}</div>
+                      }
+                      if (astate.kind !== 'ready') {
+                        return null
+                      }
+                      return (
+                        <div className="kv">
+                          {astate.targets
+                            .slice()
+                            .sort((a, b) => (a.serverName + a.role).localeCompare(b.serverName + b.role))
+                            .map((t) => (
+                              <div key={t.id} style={{ display: 'contents' }}>
+                                <div className="k">
+                                  {t.serverName} · {t.profile}
+                                </div>
+                                <div className="v">
+                                  {t.state ? (
+                                    t.state.outcomeKind === 'SUCCESS' ? (
+                                      <span>
+                                        {t.state.healthStatus ?? 'UNKNOWN'} · <code>{t.state.appName ?? '—'}</code>
                                       </span>
                                     ) : (
                                       <span>

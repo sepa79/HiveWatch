@@ -11,7 +11,12 @@ public record DashboardEnvironmentDto(
         int tomcatError,
         int tomcatWebappsTotal,
         Instant tomcatLastScanAt,
-        TomcatEnvironmentStatus tomcatStatus
+        TomcatEnvironmentStatus tomcatStatus,
+        int actuatorTargets,
+        int actuatorUp,
+        int actuatorDown,
+        int actuatorError,
+        Instant actuatorLastScanAt,
+        TomcatEnvironmentStatus actuatorStatus
 ) {
 }
-

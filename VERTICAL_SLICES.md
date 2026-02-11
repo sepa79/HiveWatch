@@ -19,8 +19,8 @@ Dev note (for now): schema is treated as rewriteable; `./build-hive-watch.sh --d
 - [x] Normalization: group results by server + role
 
 ## Slice 3 — Microservices mock (Actuator HTTP)
-- [ ] Adapter: explicit actuator endpoints (`/health`, `/info`, selected `/metrics/*`)
-- [ ] UI: show microservices separately + aggregated status
+- [x] Adapter: explicit actuator endpoints (`/health`, `/info`, selected `/metrics/*`)
+- [x] UI: show microservices separately + aggregated status
 
 ## Slice 4 — Decision engine (OK/WARN/BLOCK) + snapshot
 - [ ] Policy engine: weighted rules + unit tests
