@@ -1,0 +1,122 @@
+name: Build container images
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Resolve project version
+        id: version
+        shell: bash
+        run: |
+          version="$(mvn -q -DforceStdout help:evaluate -Dexpression=revision 2>/dev/null | tr -d '\r\n')"
+          if [[ -z "${version}" ]]; then
+            echo "Failed to resolve Maven revision" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Sync UI version (from pom.xml)
+        run: ./tools/sync-versions.sh
+
+      - name: Build JAR (skip tests)
+        run: mvn -q -DskipTests package
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (hivewatch-service)
+        id: meta_service
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/hivewatch-service
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+
+      - name: Build (hivewatch-service)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: hive-watch-service/Dockerfile.runtime
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_service.outputs.tags }}
+          labels: ${{ steps.meta_service.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Docker meta (dummy tomcat-multi)
+        id: meta_dummy_tomcat
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/hivewatch-dummy-tomcat-multi
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+
+      - name: Build (dummy tomcat-multi)
+        uses: docker/build-push-action@v6
+        with:
+          context: dummy-stack
+          file: dummy-stack/tomcat-multi/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_dummy_tomcat.outputs.tags }}
+          labels: ${{ steps.meta_dummy_tomcat.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Docker meta (dummy actuator-multi)
+        id: meta_dummy_actuator
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/hivewatch-dummy-actuator-multi
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+
+      - name: Build (dummy actuator-multi)
+        uses: docker/build-push-action@v6
+        with:
+          context: dummy-stack
+          file: dummy-stack/actuator-multi/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_dummy_actuator.outputs.tags }}
+          labels: ${{ steps.meta_dummy_actuator.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
