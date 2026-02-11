@@ -7,8 +7,7 @@ public record UserSummaryDto(
     UUID id,
     String username,
     String displayName,
-    List<String> roles,
+    List<HiveWatchRole> roles,
     boolean active
 ) {
 }
-

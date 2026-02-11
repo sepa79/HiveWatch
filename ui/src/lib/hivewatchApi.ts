@@ -1,3 +1,5 @@
+import { withDevAuthHeaders } from './auth'
+
 export type EnvironmentSummary = {
   id: string
   name: string
@@ -5,6 +7,7 @@ export type EnvironmentSummary = {
 
 export type TomcatEnvironmentStatus = 'UNKNOWN' | 'OK' | 'BLOCK'
 export type DecisionVerdict = 'OK' | 'WARN' | 'BLOCK' | 'UNKNOWN'
+export type HiveWatchRole = 'ADMIN' | 'OPERATOR' | 'VIEWER'
 
 export type DashboardEnvironment = {
   id: string
@@ -106,8 +109,19 @@ export type UserSummary = {
   id: string
   username: string
   displayName: string
-  roles: string[]
+  roles: HiveWatchRole[]
   active: boolean
+}
+
+export type UserCreateRequest = {
+  username: string
+  displayName: string
+  roles: HiveWatchRole[]
+  active: boolean
+}
+
+export type UserEnvironmentVisibilityUpdateRequest = {
+  environmentIds: string[]
 }
 
 export type DecisionIssue = {
@@ -138,7 +152,17 @@ async function readJsonOrThrow<T>(response: Response): Promise<T> {
 async function postJsonOrThrow<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: withDevAuthHeaders(body ? { 'Content-Type': 'application/json' } : undefined),
+    body: body ? JSON.stringify(body) : undefined,
+    signal,
+  })
+  return readJsonOrThrow<T>(response)
+}
+
+async function putJsonOrThrow<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: withDevAuthHeaders(body ? { 'Content-Type': 'application/json' } : undefined),
     body: body ? JSON.stringify(body) : undefined,
     signal,
   })
@@ -146,27 +170,30 @@ async function postJsonOrThrow<T>(url: string, body?: unknown, signal?: AbortSig
 }
 
 export async function fetchEnvironments(signal?: AbortSignal): Promise<EnvironmentSummary[]> {
-  const response = await fetch('/api/v1/environments', { signal })
+  const response = await fetch('/api/v1/environments', { signal, headers: withDevAuthHeaders() })
   return readJsonOrThrow<EnvironmentSummary[]>(response)
 }
 
 export async function fetchDashboardEnvironments(signal?: AbortSignal): Promise<DashboardEnvironment[]> {
-  const response = await fetch('/api/v1/dashboard/environments', { signal })
+  const response = await fetch('/api/v1/dashboard/environments', { signal, headers: withDevAuthHeaders() })
   return readJsonOrThrow<DashboardEnvironment[]>(response)
 }
 
 export async function fetchTomcatTargets(environmentId: string, signal?: AbortSignal): Promise<TomcatTarget[]> {
-  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-targets`, { signal })
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-targets`, {
+    signal,
+    headers: withDevAuthHeaders(),
+  })
   return readJsonOrThrow<TomcatTarget[]>(response)
 }
 
 export async function fetchServers(environmentId: string, signal?: AbortSignal): Promise<Server[]> {
-  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/servers`, { signal })
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/servers`, { signal, headers: withDevAuthHeaders() })
   return readJsonOrThrow<Server[]>(response)
 }
 
 export async function fetchEnvironmentStatus(environmentId: string, signal?: AbortSignal): Promise<EnvironmentStatus> {
-  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/status`, { signal })
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/status`, { signal, headers: withDevAuthHeaders() })
   return readJsonOrThrow<EnvironmentStatus>(response)
 }
 
@@ -191,7 +218,10 @@ export async function scanEnvironmentTomcats(environmentId: string, signal?: Abo
 }
 
 export async function fetchActuatorTargets(environmentId: string, signal?: AbortSignal): Promise<ActuatorTarget[]> {
-  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets`, { signal })
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets`, {
+    signal,
+    headers: withDevAuthHeaders(),
+  })
   return readJsonOrThrow<ActuatorTarget[]>(response)
 }
 
@@ -208,8 +238,45 @@ export async function scanEnvironmentActuators(environmentId: string, signal?: A
 }
 
 export async function fetchUsers(signal?: AbortSignal): Promise<UserSummary[]> {
-  const response = await fetch('/api/v1/admin/users', { signal })
+  const response = await fetch('/api/v1/admin/users', { signal, headers: withDevAuthHeaders() })
   return readJsonOrThrow<UserSummary[]>(response)
+}
+
+export async function createUser(request: UserCreateRequest, signal?: AbortSignal): Promise<UserSummary> {
+  return postJsonOrThrow<UserSummary>('/api/v1/admin/users', request, signal)
+}
+
+export async function fetchMe(signal?: AbortSignal): Promise<UserSummary> {
+  const response = await fetch('/api/v1/me', { signal, headers: withDevAuthHeaders() })
+  return readJsonOrThrow<UserSummary>(response)
+}
+
+export async function fetchAdminEnvironments(signal?: AbortSignal): Promise<EnvironmentSummary[]> {
+  const response = await fetch('/api/v1/admin/environments', { signal, headers: withDevAuthHeaders() })
+  return readJsonOrThrow<EnvironmentSummary[]>(response)
+}
+
+export async function fetchUserEnvironmentVisibility(
+  userId: string,
+  signal?: AbortSignal,
+): Promise<UserEnvironmentVisibilityUpdateRequest> {
+  const response = await fetch(`/api/v1/admin/users/${encodeURIComponent(userId)}/environment-visibility`, {
+    signal,
+    headers: withDevAuthHeaders(),
+  })
+  return readJsonOrThrow<UserEnvironmentVisibilityUpdateRequest>(response)
+}
+
+export async function replaceUserEnvironmentVisibility(
+  userId: string,
+  request: UserEnvironmentVisibilityUpdateRequest,
+  signal?: AbortSignal,
+): Promise<UserEnvironmentVisibilityUpdateRequest> {
+  return putJsonOrThrow<UserEnvironmentVisibilityUpdateRequest>(
+    `/api/v1/admin/users/${encodeURIComponent(userId)}/environment-visibility`,
+    request,
+    signal,
+  )
 }
 
 export async function fetchBackendHealth(signal?: AbortSignal): Promise<{ status: string }> {

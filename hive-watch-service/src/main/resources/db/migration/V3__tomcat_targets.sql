@@ -67,6 +67,37 @@ create table if not exists hw_actuator_target_scan_state (
   memory_used_bytes bigint null
 );
 
+create table if not exists hw_users (
+  id uuid primary key,
+  username text not null unique,
+  display_name text not null,
+  active boolean not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists hw_user_roles (
+  id uuid primary key,
+  user_id uuid not null references hw_users(id) on delete cascade,
+  role text not null,
+  created_at timestamptz not null default now(),
+
+  constraint hw_user_roles_user_role_unique unique (user_id, role)
+);
+
+create index if not exists hw_user_roles_user_id_idx on hw_user_roles(user_id);
+
+create table if not exists hw_user_environment_visibility (
+  id uuid primary key,
+  user_id uuid not null references hw_users(id) on delete cascade,
+  environment_id uuid not null references hw_environments(id) on delete cascade,
+  created_at timestamptz not null default now(),
+
+  constraint hw_user_environment_visibility_unique unique (user_id, environment_id)
+);
+
+create index if not exists hw_user_environment_visibility_user_id_idx on hw_user_environment_visibility(user_id);
+create index if not exists hw_user_environment_visibility_environment_id_idx on hw_user_environment_visibility(environment_id);
+
 -- Dev seed: environment → server → tomcat targets (payments/services/auth)
 insert into hw_servers(id, environment_id, name)
 values
@@ -122,4 +153,27 @@ values
   ('33333333-3333-3333-3333-333333330201', '33333333-3333-3333-3333-333333330002', 'PAYMENTS', 'http://hc-dummy-release-01-docker-swarm-microservices', 8080, 'payments', 1500, 5000),
   ('33333333-3333-3333-3333-333333330202', '33333333-3333-3333-3333-333333330002', 'SERVICES', 'http://hc-dummy-release-01-docker-swarm-microservices', 8080, 'services', 1500, 5000),
   ('33333333-3333-3333-3333-333333330203', '33333333-3333-3333-3333-333333330002', 'AUTH',     'http://hc-dummy-release-01-docker-swarm-microservices', 8080, 'auth',     1500, 5000)
+on conflict (id) do nothing;
+
+insert into hw_users(id, username, display_name, active)
+values
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'local-admin', 'Local Admin', true),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'local-operator', 'Local Operator', true),
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'local-viewer', 'Local Viewer', true)
+on conflict (id) do nothing;
+
+insert into hw_user_roles(id, user_id, role)
+values
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ADMIN'),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'OPERATOR'),
+  ('cccccccc-cccc-cccc-cccc-cccccccc0001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'VIEWER')
+on conflict (id) do nothing;
+
+insert into hw_user_environment_visibility(id, user_id, environment_id)
+values
+  -- local-operator: NFT envs
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0101', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '11111111-1111-1111-1111-111111111111'),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0102', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '22222222-2222-2222-2222-222222222222'),
+  -- local-viewer: release env
+  ('cccccccc-cccc-cccc-cccc-cccccccc0101', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '33333333-3333-3333-3333-333333333333')
 on conflict (id) do nothing;

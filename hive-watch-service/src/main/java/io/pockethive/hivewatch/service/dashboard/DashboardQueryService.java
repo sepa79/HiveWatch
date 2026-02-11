@@ -10,9 +10,9 @@ import io.pockethive.hivewatch.service.decision.DecisionEngine;
 import io.pockethive.hivewatch.service.decision.DecisionEvaluation;
 import io.pockethive.hivewatch.service.decision.DecisionInputs;
 import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
-import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
+import io.pockethive.hivewatch.service.security.EnvironmentVisibilityService;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetEntity;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetRepository;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetScanStateEntity;
@@ -25,46 +25,53 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DashboardQueryService {
-    private final EnvironmentRepository environmentRepository;
     private final ServerRepository serverRepository;
     private final TomcatTargetRepository tomcatTargetRepository;
     private final TomcatTargetScanStateRepository tomcatTargetScanStateRepository;
     private final ActuatorTargetRepository actuatorTargetRepository;
     private final ActuatorTargetScanStateRepository actuatorTargetScanStateRepository;
     private final DecisionEngine decisionEngine;
+    private final EnvironmentVisibilityService environmentVisibilityService;
 
     public DashboardQueryService(
-            EnvironmentRepository environmentRepository,
             ServerRepository serverRepository,
             TomcatTargetRepository tomcatTargetRepository,
             TomcatTargetScanStateRepository tomcatTargetScanStateRepository,
             ActuatorTargetRepository actuatorTargetRepository,
             ActuatorTargetScanStateRepository actuatorTargetScanStateRepository,
-            DecisionEngine decisionEngine
+            DecisionEngine decisionEngine,
+            EnvironmentVisibilityService environmentVisibilityService
     ) {
-        this.environmentRepository = environmentRepository;
         this.serverRepository = serverRepository;
         this.tomcatTargetRepository = tomcatTargetRepository;
         this.tomcatTargetScanStateRepository = tomcatTargetScanStateRepository;
         this.actuatorTargetRepository = actuatorTargetRepository;
         this.actuatorTargetScanStateRepository = actuatorTargetScanStateRepository;
         this.decisionEngine = decisionEngine;
+        this.environmentVisibilityService = environmentVisibilityService;
     }
 
     @Transactional(readOnly = true)
     public List<DashboardEnvironmentDto> listEnvironments() {
-        List<EnvironmentEntity> environments = environmentRepository.findAll(Sort.by(Sort.Direction.ASC, "name"));
-        List<ServerEntity> servers = serverRepository.findAll();
+        List<EnvironmentEntity> environments = environmentVisibilityService.listVisibleEnvironments();
+        List<UUID> envIds = environments.stream().map(EnvironmentEntity::getId).toList();
+
+        List<ServerEntity> servers = serverRepository.findAll().stream()
+                .filter(s -> envIds.contains(s.getEnvironmentId()))
+                .toList();
         Map<UUID, ServerEntity> serverById = servers.stream()
                 .collect(java.util.stream.Collectors.toMap(ServerEntity::getId, Function.identity()));
-        List<TomcatTargetEntity> targets = tomcatTargetRepository.findAll();
-        List<ActuatorTargetEntity> actuatorTargets = actuatorTargetRepository.findAll();
+        List<TomcatTargetEntity> targets = tomcatTargetRepository.findAll().stream()
+                .filter(t -> serverById.containsKey(t.getServerId()))
+                .toList();
+        List<ActuatorTargetEntity> actuatorTargets = actuatorTargetRepository.findAll().stream()
+                .filter(t -> serverById.containsKey(t.getServerId()))
+                .toList();
 
         Map<UUID, UUID> serverEnvByServerId = servers.stream()
                 .collect(java.util.stream.Collectors.toMap(ServerEntity::getId, ServerEntity::getEnvironmentId));

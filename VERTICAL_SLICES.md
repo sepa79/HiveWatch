@@ -28,6 +28,6 @@ Dev note (for now): schema is treated as rewriteable; `./build-hive-watch.sh --d
 - [x] Dashboard uses Decision (not “reachable”)
 
 ## Slice 5 — User visibility + admin config
-- [ ] Auth: OIDC/JWT skeleton (server-side enforcement)
-- [ ] Admin UI: users + environment visibility
-- [ ] Dashboard filtered per user (no placeholder visibility)
+- [x] Auth: OIDC/JWT skeleton (server-side enforcement)
+- [x] Admin UI: users + environment visibility
+- [x] Dashboard filtered per user (no placeholder visibility)
