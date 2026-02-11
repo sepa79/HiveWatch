@@ -1,6 +1,7 @@
 package io.pockethive.hivewatch.service.environments.servers;
 
 import io.pockethive.hivewatch.service.api.ServerCreateRequestDto;
+import io.pockethive.hivewatch.service.api.ServerCloneRequestDto;
 import io.pockethive.hivewatch.service.api.ServerDto;
 import io.pockethive.hivewatch.service.api.ServerUpdateRequestDto;
 import io.pockethive.hivewatch.service.security.EnvironmentVisibilityService;
@@ -18,10 +19,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ServerController {
     private final ServerService serverService;
+    private final ServerCloneService serverCloneService;
     private final EnvironmentVisibilityService environmentVisibilityService;
 
-    public ServerController(ServerService serverService, EnvironmentVisibilityService environmentVisibilityService) {
+    public ServerController(ServerService serverService, ServerCloneService serverCloneService, EnvironmentVisibilityService environmentVisibilityService) {
         this.serverService = serverService;
+        this.serverCloneService = serverCloneService;
         this.environmentVisibilityService = environmentVisibilityService;
     }
 
@@ -38,6 +41,16 @@ public class ServerController {
     ) {
         environmentVisibilityService.requireVisible(environmentId);
         return serverService.create(environmentId, request);
+    }
+
+    @PostMapping("/api/v1/environments/{environmentId}/servers/{serverId}/clone")
+    public ServerDto clone(
+            @PathVariable("environmentId") UUID environmentId,
+            @PathVariable("serverId") UUID serverId,
+            @RequestBody ServerCloneRequestDto request
+    ) {
+        environmentVisibilityService.requireVisible(environmentId);
+        return serverCloneService.cloneServer(environmentId, serverId, request);
     }
 
     @PutMapping("/api/v1/environments/{environmentId}/servers/{serverId}")

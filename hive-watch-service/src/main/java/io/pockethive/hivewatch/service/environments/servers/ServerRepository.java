@@ -10,4 +10,6 @@ public interface ServerRepository extends JpaRepository<ServerEntity, UUID> {
     List<ServerEntity> findByEnvironmentIdIn(List<UUID> environmentIds);
 
     boolean existsByIdAndEnvironmentId(UUID id, UUID environmentId);
+
+    boolean existsByEnvironmentIdAndName(UUID environmentId, String name);
 }

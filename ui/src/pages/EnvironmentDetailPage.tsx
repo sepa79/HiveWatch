@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
+  cloneServer,
   createActuatorTarget,
   createExpectedSetTemplate,
   createServer,
   createTomcatTarget,
   fetchExpectedSetTemplates,
-  fetchAdminEnvironments,
-  cloneAdminEnvironmentConfig,
   deleteActuatorTarget,
   deleteServer,
   deleteTomcatTarget,
@@ -21,7 +20,6 @@ import {
   updateTomcatTarget,
   type ActuatorTarget,
   type ActuatorTargetCreateRequest,
-  type EnvironmentSummary,
   type EnvironmentStatus,
   type ExpectedSetTemplateCreateRequest,
   type ExpectedSetTemplate,
@@ -60,6 +58,10 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
   const [editingServerId, setEditingServerId] = useState<string | null>(null)
   const [serverEditName, setServerEditName] = useState('')
   const [savingServerEdit, setSavingServerEdit] = useState(false)
+  const [cloneServerFromId, setCloneServerFromId] = useState<string | null>(null)
+  const [cloneServerNameDraft, setCloneServerNameDraft] = useState('')
+  const [cloningServer, setCloningServer] = useState(false)
+  const [cloneServerError, setCloneServerError] = useState<string | null>(null)
 
   const [creatingTomcatTemplate, setCreatingTomcatTemplate] = useState(false)
   const [creatingDockerTemplate, setCreatingDockerTemplate] = useState(false)
@@ -102,11 +104,6 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
   })
 
   const [serverForm, setServerForm] = useState<ServerCreateRequest>({ name: '' })
-
-  const [cloneSources, setCloneSources] = useState<EnvironmentSummary[] | null>(null)
-  const [cloneSourceId, setCloneSourceId] = useState<string>('')
-  const [cloning, setCloning] = useState(false)
-  const [cloneError, setCloneError] = useState<string | null>(null)
 
   const refresh = (signal?: AbortSignal) =>
     Promise.all([
@@ -241,6 +238,8 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
   const beginServerEdit = (server: Server) => {
     setEditingServerId(server.id)
     setServerEditName(server.name)
+    setCloneServerFromId(null)
+    setCloneServerError(null)
   }
 
   const beginTomcatEdit = (t: TomcatTarget) => {
@@ -277,23 +276,6 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
       .filter((s) => s.length > 0)
 
   const isAdmin = auth.kind === 'ready' && auth.me.roles.includes('ADMIN')
-
-  useEffect(() => {
-    if (!isAdmin) return
-    if (view !== 'overview') return
-    const controller = new AbortController()
-    setCloneSources(null)
-    setCloneError(null)
-    fetchAdminEnvironments(controller.signal)
-      .then((envs) => {
-        const sources = envs.filter((e) => e.id !== environmentId)
-        setCloneSources(sources)
-        if (!cloneSourceId && sources.length > 0) setCloneSourceId(sources[0].id)
-      })
-      .catch((e) => setCloneError(e instanceof Error ? e.message : 'Request failed'))
-    return () => controller.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, view, environmentId])
 
   const beginEnvRename = () => {
     if (state.kind !== 'ready') return
@@ -434,82 +416,6 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
         </div>
       ) : null}
 
-      {state.kind === 'ready' && view === 'overview' && isAdmin ? (
-        <div className="card" style={{ marginTop: 12, padding: 12 }}>
-          <div className="h2" style={{ margin: 0 }}>
-            Clone config
-          </div>
-          <div className="muted" style={{ marginTop: 6 }}>
-            Copies Servers + targets + expected-set specs from another environment into this one. Templates are global and are reused. User visibility and scan state are not copied.
-          </div>
-
-          {cloneError ? (
-            <div className="muted" style={{ marginTop: 8 }}>
-              Error: {cloneError}
-            </div>
-          ) : null}
-
-          {(() => {
-            const empty = state.servers.length === 0 && state.targets.length === 0 && state.actuatorTargets.length === 0
-            const sources = cloneSources ?? []
-            return (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'end', marginTop: 10, maxWidth: 900 }}>
-                <label className="field" style={{ flex: 1 }}>
-                  <div className="fieldLabel">Source environment</div>
-                  <select
-                    className="fieldInput"
-                    value={cloneSourceId}
-                    onChange={(e) => setCloneSourceId(e.target.value)}
-                    disabled={!empty || cloning || cloneSources == null || sources.length === 0}
-                    aria-label="Source environment for cloning"
-                  >
-                    {cloneSources == null ? <option value="">Loading…</option> : null}
-                    {cloneSources != null && sources.length === 0 ? <option value="">No other environments</option> : null}
-                    {sources.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={!empty || cloning || !cloneSourceId}
-                  onClick={() => {
-                    if (!empty) {
-                      setCloneError('Target environment must be empty to clone config.')
-                      return
-                    }
-                    if (!cloneSourceId) {
-                      setCloneError('Pick a source environment.')
-                      return
-                    }
-                    const srcName = sources.find((e) => e.id === cloneSourceId)?.name ?? cloneSourceId
-                    if (!window.confirm(`Clone config from '${srcName}' into '${state.status.environmentName}'?\n\nThis will create servers and targets.`)) return
-                    setCloning(true)
-                    setCloneError(null)
-                    const controller = new AbortController()
-                    cloneAdminEnvironmentConfig(environmentId, { sourceEnvironmentId: cloneSourceId }, controller.signal)
-                      .then((r) => {
-                        window.alert(
-                          `Cloned: ${r.servers} servers, ${r.tomcatTargets} tomcat targets, ${r.actuatorTargets} microservices, ${r.tomcatExpectedSpecs} tomcat expected specs, ${r.dockerExpectedSpecs} docker expected specs.`,
-                        )
-                        return refresh(controller.signal)
-                      })
-                      .catch((e) => setCloneError(e instanceof Error ? e.message : 'Request failed'))
-                      .finally(() => setCloning(false))
-                  }}
-                >
-                  {cloning ? 'Cloning…' : 'Clone'}
-                </button>
-                {!empty ? <div className="muted">This environment is not empty.</div> : null}
-              </div>
-            )
-          })()}
-        </div>
-      ) : null}
-
       <details className="card" style={{ marginTop: 12, padding: 12 }}>
         <summary style={{ cursor: 'pointer', fontWeight: 900 }}>Help</summary>
         <div className="muted" style={{ marginTop: 8 }}>
@@ -605,69 +511,158 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
                       navigate(`/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(server.id)}`)
 
                     return (
-                      <tr key={server.id}>
-                        <td style={{ fontWeight: 800 }}>
-                          {editingServerId === server.id ? (
-                            <input
-                              className="fieldInput"
-                              value={serverEditName}
-                              onChange={(e) => setServerEditName(e.target.value)}
-                              aria-label={`Server name: ${server.name}`}
-                            />
-                          ) : (
-                            <>
-                              {server.name}
-                              <div className="muted" style={{ fontWeight: 500 }}>
-                                <code>{server.id}</code>
-                              </div>
-                            </>
-                          )}
-                        </td>
-                        <td className="muted">{tomcats}</td>
-                        <td className="muted">{micro}</td>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          <button type="button" className="button" onClick={open}>
-                            Edit
-                          </button>
-                          {editingServerId === server.id ? (
-                            <>
-                              <button
-                                type="button"
-                                className="button"
-                                disabled={savingServerEdit}
-                                onClick={() => {
-                                  const controller = new AbortController()
-                                  setSavingServerEdit(true)
-                                  updateServer(environmentId, server.id, { name: serverEditName }, controller.signal)
-                                    .then(() => refresh())
-                                    .then(() => setEditingServerId(null))
-                                    .finally(() => setSavingServerEdit(false))
-                                }}
-                              >
-                                {savingServerEdit ? 'Saving…' : 'Save'}
-                              </button>
-                              <button type="button" className="button" onClick={() => setEditingServerId(null)} disabled={savingServerEdit}>
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <button type="button" className="button" onClick={() => beginServerEdit(server)}>
-                              Rename
+                      <Fragment key={server.id}>
+                        <tr>
+                          <td style={{ fontWeight: 800 }}>
+                            {editingServerId === server.id ? (
+                              <input
+                                className="fieldInput"
+                                value={serverEditName}
+                                onChange={(e) => setServerEditName(e.target.value)}
+                                aria-label={`Server name: ${server.name}`}
+                              />
+                            ) : (
+                              <>
+                                {server.name}
+                                <div className="muted" style={{ fontWeight: 500 }}>
+                                  <code>{server.id}</code>
+                                </div>
+                              </>
+                            )}
+                          </td>
+                          <td className="muted">{tomcats}</td>
+                          <td className="muted">{micro}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <button type="button" className="button" onClick={open}>
+                              Edit
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            className="button"
-                            onClick={() => {
-                              if (!window.confirm(`Delete server '${server.name}'? This will also delete its targets.`)) return
-                              const controller = new AbortController()
-                              deleteServer(environmentId, server.id, controller.signal).then(() => refresh())
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
+                            <button
+                              type="button"
+                              className="button"
+                              disabled={cloningServer}
+                              onClick={() => {
+                                setEditingServerId(null)
+                                setCloneServerError(null)
+                                if (cloneServerFromId === server.id) {
+                                  setCloneServerFromId(null)
+                                  return
+                                }
+                                setCloneServerFromId(server.id)
+                                setCloneServerNameDraft(`${server.name} Copy`)
+                              }}
+                            >
+                              {cloneServerFromId === server.id ? 'Close clone' : 'Clone'}
+                            </button>
+                            {editingServerId === server.id ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="button"
+                                  disabled={savingServerEdit}
+                                  onClick={() => {
+                                    const controller = new AbortController()
+                                    setSavingServerEdit(true)
+                                    updateServer(environmentId, server.id, { name: serverEditName }, controller.signal)
+                                      .then(() => refresh())
+                                      .then(() => setEditingServerId(null))
+                                      .finally(() => setSavingServerEdit(false))
+                                  }}
+                                >
+                                  {savingServerEdit ? 'Saving…' : 'Save'}
+                                </button>
+                                <button type="button" className="button" onClick={() => setEditingServerId(null)} disabled={savingServerEdit}>
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button type="button" className="button" onClick={() => beginServerEdit(server)} disabled={cloningServer}>
+                                Rename
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="button"
+                              disabled={cloningServer}
+                              onClick={() => {
+                                if (!window.confirm(`Delete server '${server.name}'? This will also delete its targets.`)) return
+                                const controller = new AbortController()
+                                deleteServer(environmentId, server.id, controller.signal).then(() => refresh())
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+
+                        {cloneServerFromId === server.id ? (
+                          <tr>
+                            <td colSpan={4}>
+                              <div className="card" style={{ padding: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div style={{ fontWeight: 900 }}>Clone server “{server.name}”</div>
+                                  <div className="muted" style={{ marginLeft: 'auto' }}>
+                                    Creates a new server with copied targets + expected sets.
+                                  </div>
+                                </div>
+
+                                {cloneServerError ? (
+                                  <div className="muted" style={{ marginTop: 8 }}>
+                                    Error: {cloneServerError}
+                                  </div>
+                                ) : null}
+
+                                <div style={{ display: 'flex', gap: 10, alignItems: 'end', marginTop: 10, maxWidth: 920 }}>
+                                  <label className="field" style={{ flex: 1 }}>
+                                    <div className="fieldLabel">New server name</div>
+                                    <input
+                                      className="fieldInput"
+                                      value={cloneServerNameDraft}
+                                      onChange={(e) => setCloneServerNameDraft(e.target.value)}
+                                      placeholder="Services Copy"
+                                      aria-label="New server name"
+                                      disabled={cloningServer}
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    className="button"
+                                    disabled={cloningServer}
+                                    onClick={() => {
+                                      const name = cloneServerNameDraft.trim()
+                                      if (!name) {
+                                        setCloneServerError('Name is required.')
+                                        return
+                                      }
+                                      if (!window.confirm(`Clone server '${server.name}' as '${name}'?`)) return
+                                      setCloningServer(true)
+                                      setCloneServerError(null)
+                                      const controller = new AbortController()
+                                      cloneServer(environmentId, server.id, { name }, controller.signal)
+                                        .then(() => refresh())
+                                        .then(() => setCloneServerFromId(null))
+                                        .catch((e) => setCloneServerError(e instanceof Error ? e.message : 'Request failed'))
+                                        .finally(() => setCloningServer(false))
+                                    }}
+                                  >
+                                    {cloningServer ? 'Cloning…' : 'Clone'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="button"
+                                    disabled={cloningServer}
+                                    onClick={() => {
+                                      setCloneServerFromId(null)
+                                      setCloneServerError(null)
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     )
                   })}
                 </tbody>

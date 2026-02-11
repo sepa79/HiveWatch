@@ -202,6 +202,10 @@ export type ServerUpdateRequest = {
   name: string
 }
 
+export type ServerCloneRequest = {
+  name: string
+}
+
 export type UserSummary = {
   id: string
   username: string
@@ -441,6 +445,19 @@ export async function createServer(
   signal?: AbortSignal,
 ): Promise<Server> {
   return postJsonOrThrow<Server>(`/api/v1/environments/${encodeURIComponent(environmentId)}/servers`, request, signal)
+}
+
+export async function cloneServer(
+  environmentId: string,
+  serverId: string,
+  request: ServerCloneRequest,
+  signal?: AbortSignal,
+): Promise<Server> {
+  return postJsonOrThrow<Server>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(serverId)}/clone`,
+    request,
+    signal,
+  )
 }
 
 export async function updateServer(

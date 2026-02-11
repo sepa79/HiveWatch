@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
-import { createAdminEnvironment, deleteAdminEnvironment, fetchAdminEnvironments, fetchEnvironments, type EnvironmentSummary } from '../lib/hivewatchApi'
+import { Fragment, useCallback, useEffect, useState } from 'react'
+import {
+  cloneAdminEnvironmentConfig,
+  createAdminEnvironment,
+  deleteAdminEnvironment,
+  fetchAdminEnvironments,
+  fetchEnvironments,
+  type EnvironmentSummary,
+} from '../lib/hivewatchApi'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/authContext'
 
@@ -15,6 +22,10 @@ export function EnvironmentsPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [cloneTargetId, setCloneTargetId] = useState<string | null>(null)
+  const [cloneSourceId, setCloneSourceId] = useState<string>('')
+  const [cloning, setCloning] = useState(false)
+  const [cloneError, setCloneError] = useState<string | null>(null)
 
   const isAdmin = auth.kind === 'ready' && auth.me.roles.includes('ADMIN')
 
@@ -130,28 +141,125 @@ export function EnvironmentsPage() {
                   </tr>
                 ) : null}
                 {state.environments.map((env) => (
-                  <tr key={env.id}>
-                    <td style={{ fontWeight: 900 }}>
-                      <Link to={`/environments/${encodeURIComponent(env.id)}`}>{env.name}</Link>
-                      {isAdmin ? (
-                        <div className="muted" style={{ fontWeight: 500, marginTop: 4 }}>
-                          <code>{env.id}</code>
-                        </div>
-                      ) : null}
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                        <Link className="button" to={`/environments/${encodeURIComponent(env.id)}`}>
-                          Edit
-                        </Link>
+                  <Fragment key={env.id}>
+                    <tr>
+                      <td style={{ fontWeight: 900 }}>
+                        <Link to={`/environments/${encodeURIComponent(env.id)}`}>{env.name}</Link>
                         {isAdmin ? (
-                          <button type="button" className="button" onClick={() => onDelete(env)} disabled={deletingId === env.id}>
-                            {deletingId === env.id ? 'Deleting…' : 'Delete'}
-                          </button>
+                          <div className="muted" style={{ fontWeight: 500, marginTop: 4 }}>
+                            <code>{env.id}</code>
+                          </div>
                         ) : null}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <Link className="button" to={`/environments/${encodeURIComponent(env.id)}`}>
+                            Edit
+                          </Link>
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              className="button"
+                              onClick={() => {
+                                if (state.kind !== 'ready') return
+                                setCloneError(null)
+                                if (cloneTargetId === env.id) {
+                                  setCloneTargetId(null)
+                                  return
+                                }
+                                setCloneTargetId(env.id)
+                                const sources = state.environments.filter((e) => e.id !== env.id)
+                                setCloneSourceId(sources[0]?.id ?? '')
+                              }}
+                              disabled={cloning}
+                            >
+                              {cloneTargetId === env.id ? 'Close clone' : 'Clone'}
+                            </button>
+                          ) : null}
+                          {isAdmin ? (
+                            <button type="button" className="button" onClick={() => onDelete(env)} disabled={deletingId === env.id || cloning}>
+                              {deletingId === env.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                    {isAdmin && state.kind === 'ready' && cloneTargetId === env.id ? (
+                      <tr>
+                        <td colSpan={2}>
+                          <div className="card" style={{ padding: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ fontWeight: 900 }}>Clone config into {env.name}</div>
+                              <div className="muted" style={{ marginLeft: 'auto' }}>
+                                Target must be empty.
+                              </div>
+                            </div>
+
+                            {cloneError ? (
+                              <div className="muted" style={{ marginTop: 8 }}>
+                                Error: {cloneError}
+                              </div>
+                            ) : null}
+
+                            <div style={{ display: 'flex', gap: 10, alignItems: 'end', marginTop: 10, maxWidth: 920 }}>
+                              <label className="field" style={{ flex: 1 }}>
+                                <div className="fieldLabel">Source environment</div>
+                                <select
+                                  className="fieldInput"
+                                  value={cloneSourceId}
+                                  onChange={(e) => setCloneSourceId(e.target.value)}
+                                  disabled={cloning}
+                                  aria-label="Source environment"
+                                >
+                                  {state.environments
+                                    .filter((e) => e.id !== env.id)
+                                    .map((e) => (
+                                      <option key={e.id} value={e.id}>
+                                        {e.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                              <button
+                                type="button"
+                                className="button"
+                                disabled={cloning || !cloneSourceId}
+                                onClick={() => {
+                                  const srcName = state.environments.find((e) => e.id === cloneSourceId)?.name ?? cloneSourceId
+                                  if (!window.confirm(`Clone config from '${srcName}' into '${env.name}'?\n\nThis will create servers and targets.`)) return
+                                  setCloning(true)
+                                  setCloneError(null)
+                                  const controller = new AbortController()
+                                  cloneAdminEnvironmentConfig(env.id, { sourceEnvironmentId: cloneSourceId }, controller.signal)
+                                    .then((r) => {
+                                      window.alert(
+                                        `Cloned: ${r.servers} servers, ${r.tomcatTargets} tomcat targets, ${r.actuatorTargets} microservices, ${r.tomcatExpectedSpecs} tomcat expected specs, ${r.dockerExpectedSpecs} docker expected specs.`,
+                                      )
+                                      setCloneTargetId(null)
+                                    })
+                                    .catch((e) => setCloneError(e instanceof Error ? e.message : 'Request failed'))
+                                    .finally(() => setCloning(false))
+                                }}
+                              >
+                                {cloning ? 'Cloning…' : 'Clone'}
+                              </button>
+                              <button
+                                type="button"
+                                className="button"
+                                disabled={cloning}
+                                onClick={() => {
+                                  setCloneTargetId(null)
+                                  setCloneError(null)
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
