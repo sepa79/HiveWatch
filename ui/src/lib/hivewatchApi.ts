@@ -9,25 +9,63 @@ export type TomcatEnvironmentStatus = 'UNKNOWN' | 'OK' | 'BLOCK'
 export type DecisionVerdict = 'OK' | 'WARN' | 'BLOCK' | 'UNKNOWN'
 export type HiveWatchRole = 'ADMIN' | 'OPERATOR' | 'VIEWER'
 
-export type DashboardEnvironment = {
+export type DashboardGroupStatus = 'OK' | 'BLOCK' | 'UNKNOWN'
+
+export type DashboardGroupSummary = {
+  status: DashboardGroupStatus
+  targets: number
+  lastScanAt: string | null
+}
+
+export type DashboardEnvironmentSummary = {
+  tomcats: DashboardGroupSummary
+  docker: DashboardGroupSummary
+  aws: DashboardGroupSummary
+  verdict: DecisionVerdict
+  blockIssues: number
+  warnIssues: number
+  unknownIssues: number
+  evaluatedAt: string
+}
+
+export type DashboardCellKind = 'VALUE' | 'ERROR' | 'UNKNOWN'
+export type DashboardCell = {
+  kind: DashboardCellKind
+  text: string | null
+  title: string | null
+}
+
+export type DashboardColumn = {
+  key: string
+  label: string
+}
+
+export type DashboardRowStatus = 'OK' | 'BLOCK' | 'UNKNOWN'
+export type DashboardRow = {
+  id: string
+  label: string
+  link: string | null
+  cells: DashboardCell[]
+  status: DashboardRowStatus
+}
+
+export type DashboardSectionKind = 'TOMCATS' | 'DOCKER' | 'AWS'
+export type DashboardSection = {
+  kind: DashboardSectionKind
+  title: string
+  columns: DashboardColumn[]
+  rows: DashboardRow[]
+}
+
+export type DashboardEnvironmentBlock = {
   id: string
   name: string
-  tomcatTargets: number
-  tomcatOk: number
-  tomcatError: number
-  tomcatWebappsTotal: number
-  tomcatLastScanAt: string | null
-  tomcatStatus: TomcatEnvironmentStatus
-  actuatorTargets: number
-  actuatorUp: number
-  actuatorDown: number
-  actuatorError: number
-  actuatorLastScanAt: string | null
-  actuatorStatus: TomcatEnvironmentStatus
-  decisionVerdict: DecisionVerdict
-  decisionBlockIssues: number
-  decisionWarnIssues: number
-  decisionUnknownIssues: number
+  summary: DashboardEnvironmentSummary
+  sections: DashboardSection[]
+}
+
+export type Dashboard = {
+  environments: DashboardEnvironmentBlock[]
 }
 
 export type TomcatScanOutcomeKind = 'SUCCESS' | 'ERROR'
@@ -193,9 +231,9 @@ export async function fetchEnvironments(signal?: AbortSignal): Promise<Environme
   return readJsonOrThrow<EnvironmentSummary[]>(response)
 }
 
-export async function fetchDashboardEnvironments(signal?: AbortSignal): Promise<DashboardEnvironment[]> {
-  const response = await fetch('/api/v1/dashboard/environments', { signal, headers: withDevAuthHeaders() })
-  return readJsonOrThrow<DashboardEnvironment[]>(response)
+export async function fetchDashboard(signal?: AbortSignal): Promise<Dashboard> {
+  const response = await fetch('/api/v1/dashboard', { signal, headers: withDevAuthHeaders() })
+  return readJsonOrThrow<Dashboard>(response)
 }
 
 export async function fetchTomcatTargets(environmentId: string, signal?: AbortSignal): Promise<TomcatTarget[]> {
