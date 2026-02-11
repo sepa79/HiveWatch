@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useToolsBar } from '../components/ToolsBarContext'
-import { fetchActuatorTargets, fetchServers, type ActuatorTarget } from '../lib/hivewatchApi'
+import { fetchDockerServicesPage, fetchServers, type DockerServiceListItem, type DockerServicesPage } from '../lib/hivewatchApi'
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; serverName: string; targets: ActuatorTarget[] }
+  | { kind: 'ready'; serverName: string; page: DockerServicesPage }
   | { kind: 'error'; message: string }
 
 function errorIcon(title: string) {
@@ -39,11 +39,10 @@ function statusPill(status: 'OK' | 'BLOCK' | 'UNKNOWN') {
   }
 }
 
-function targetStatus(t: ActuatorTarget): 'OK' | 'BLOCK' | 'UNKNOWN' {
-  const st = t.state
-  if (!st) return 'UNKNOWN'
-  if (st.outcomeKind !== 'SUCCESS') return 'BLOCK'
-  if ((st.healthStatus ?? '').toUpperCase() !== 'UP') return 'BLOCK'
+function targetStatus(t: DockerServiceListItem): 'OK' | 'BLOCK' | 'UNKNOWN' {
+  if (!t.outcomeKind) return 'UNKNOWN'
+  if (t.outcomeKind !== 'SUCCESS') return 'BLOCK'
+  if ((t.healthStatus ?? '').toUpperCase() !== 'UP') return 'BLOCK'
   return 'OK'
 }
 
@@ -59,15 +58,26 @@ function DockerClusterToolsBar({
   serverName,
   search,
   onSearchChange,
+  page,
+  size,
+  total,
+  onPrev,
+  onNext,
   onRefresh,
 }: {
   environmentId: string
   serverName: string
   search: string
   onSearchChange: (next: string) => void
+  page: number
+  size: number
+  total: number
+  onPrev: () => void
+  onNext: () => void
   onRefresh: () => void
 }) {
   const navigate = useNavigate()
+  const pageCount = Math.max(1, Math.ceil(total / Math.max(1, size)))
   return (
     <div className="toolsRow">
       <button type="button" className="button" onClick={() => navigate(`/dashboard/matrix/${encodeURIComponent(environmentId)}`)}>
@@ -84,6 +94,15 @@ function DockerClusterToolsBar({
         onChange={(e) => onSearchChange(e.target.value)}
         aria-label="Search services"
       />
+      <div className="muted" style={{ marginLeft: 12, whiteSpace: 'nowrap' }}>
+        Page {page + 1} / {pageCount}
+      </div>
+      <button type="button" className="button" onClick={onPrev} disabled={page <= 0}>
+        Prev
+      </button>
+      <button type="button" className="button" onClick={onNext} disabled={(page + 1) * size >= total}>
+        Next
+      </button>
       <button type="button" className="button" style={{ marginLeft: 'auto' }} onClick={onRefresh}>
         Refresh
       </button>
@@ -98,6 +117,8 @@ export function DockerClusterPage() {
 
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
+  const size = 50
 
   const refresh = useCallback(
     (signal?: AbortSignal) => {
@@ -105,15 +126,14 @@ export function DockerClusterPage() {
         setState({ kind: 'error', message: 'Missing environmentId/serverId' })
         return Promise.resolve()
       }
-      return Promise.all([fetchServers(environmentId, signal), fetchActuatorTargets(environmentId, signal)])
-        .then(([servers, targets]) => {
-          const serverName = servers.find((s) => s.id === serverId)?.name ?? targets.find((t) => t.serverId === serverId)?.serverName ?? 'Unknown'
-          const filtered = targets.filter((t) => t.serverId === serverId)
-          setState({ kind: 'ready', serverName, targets: filtered })
+      return Promise.all([fetchServers(environmentId, signal), fetchDockerServicesPage(environmentId, serverId, { q: search.trim() || undefined, page, size }, signal)])
+        .then(([servers, pageDto]) => {
+          const serverName = servers.find((s) => s.id === serverId)?.name ?? 'Unknown'
+          setState({ kind: 'ready', serverName, page: pageDto })
         })
         .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
     },
-    [environmentId, serverId],
+    [environmentId, page, search, serverId],
   )
 
   const refreshNow = useCallback(() => {
@@ -126,35 +146,39 @@ export function DockerClusterPage() {
     return () => controller.abort()
   }, [refresh])
 
-  const onSearchChange = useCallback((next: string) => setSearch(next), [])
+  const onSearchChange = useCallback((next: string) => {
+    setSearch(next)
+    setPage(0)
+  }, [])
 
   const tools = useMemo(() => {
     const serverName = state.kind === 'ready' ? state.serverName : 'Docker'
+    const total = state.kind === 'ready' ? state.page.total : 0
+    const sizeValue = state.kind === 'ready' ? state.page.size : size
+    const pageValue = state.kind === 'ready' ? state.page.page : page
     return (
       <DockerClusterToolsBar
         environmentId={environmentId}
         serverName={serverName}
         search={search}
         onSearchChange={onSearchChange}
+        page={pageValue}
+        size={sizeValue}
+        total={total}
+        onPrev={() => setPage((p) => Math.max(0, p - 1))}
+        onNext={() => setPage((p) => p + 1)}
         onRefresh={refreshNow}
       />
     )
-  }, [environmentId, onSearchChange, refreshNow, search, state])
+  }, [environmentId, onSearchChange, page, refreshNow, search, size, state])
   useToolsBar(tools)
 
   const title = useMemo(() => {
-    if (state.kind === 'ready') return `Docker · ${state.serverName} · ${state.targets.length} services`
+    if (state.kind === 'ready') return `Docker · ${state.serverName} · ${state.page.total} services`
     return 'Docker'
   }, [state])
 
-  const rows = useMemo(() => {
-    if (state.kind !== 'ready') return []
-    const q = search.trim().toLowerCase()
-    const list = q
-      ? state.targets.filter((t) => (t.profile + ' ' + (t.state?.appName ?? '')).toLowerCase().includes(q))
-      : state.targets
-    return [...list].sort((a, b) => a.profile.localeCompare(b.profile))
-  }, [search, state])
+  const rows = useMemo(() => (state.kind === 'ready' ? state.page.items : []), [state])
 
   return (
     <div className="page">
@@ -198,39 +222,37 @@ export function DockerClusterPage() {
                 </tr>
               ) : null}
               {rows.map((t) => {
-                const st = t.state
                 const stKind = targetStatus(t)
-                const detailLink = `/dashboard/docker/${encodeURIComponent(environmentId)}/${encodeURIComponent(serverId)}/services/${encodeURIComponent(t.id)}`
-                const healthText =
-                  st && st.outcomeKind === 'SUCCESS' ? (st.healthStatus ?? 'UNKNOWN') : st ? 'ERROR' : '—'
+                const detailLink = `/dashboard/docker/${encodeURIComponent(environmentId)}/${encodeURIComponent(serverId)}/services/${encodeURIComponent(t.targetId)}`
+                const healthText = t.outcomeKind === 'SUCCESS' ? (t.healthStatus ?? 'UNKNOWN') : t.outcomeKind ? 'ERROR' : '—'
                 const version =
-                  st && st.outcomeKind === 'SUCCESS' && (st.healthStatus ?? '').toUpperCase() === 'UP'
-                    ? st.buildVersion
-                      ? st.buildVersion
+                  t.outcomeKind === 'SUCCESS' && (t.healthStatus ?? '').toUpperCase() === 'UP'
+                    ? t.buildVersion
+                      ? t.buildVersion
                       : null
                     : null
                 const versionNode =
-                  st && st.outcomeKind !== 'SUCCESS'
-                    ? errorIcon(`${t.profile} error: ${st.errorKind ?? 'UNKNOWN'}: ${st.errorMessage ?? 'Request failed'}`)
-                    : st && (st.healthStatus ?? '').toUpperCase() !== 'UP'
-                      ? errorIcon(`${t.profile} is ${st.healthStatus ?? 'UNKNOWN'}`)
+                  t.outcomeKind && t.outcomeKind !== 'SUCCESS'
+                    ? errorIcon(`${t.profile} error: ${t.errorKind ?? 'UNKNOWN'}: ${t.errorMessage ?? 'Request failed'}`)
+                    : t.outcomeKind && (t.healthStatus ?? '').toUpperCase() !== 'UP'
+                      ? errorIcon(`${t.profile} is ${t.healthStatus ?? 'UNKNOWN'}`)
                       : version
                         ? version
                         : <span className="muted">—</span>
 
                 return (
-                  <tr key={t.id}>
+                  <tr key={t.targetId}>
                     <td style={{ fontWeight: 800 }}>
                       <Link to={detailLink} style={{ textDecoration: 'none' }}>
                         {t.profile}
                       </Link>
                       <div className="muted" style={{ fontWeight: 500 }}>
-                        {st?.appName ?? '—'}
+                        {t.appName ?? '—'}
                       </div>
                     </td>
                     <td>{versionNode}</td>
                     <td>{healthText}</td>
-                    <td className="muted">{formatTs(st?.scannedAt ?? null)}</td>
+                    <td className="muted">{formatTs(t.scannedAt ?? null)}</td>
                     <td>{statusPill(stKind)}</td>
                   </tr>
                 )
@@ -242,4 +264,3 @@ export function DockerClusterPage() {
     </div>
   )
 }
-

@@ -7,6 +7,7 @@ import { DiagnosticsPage } from './pages/DiagnosticsPage'
 import { DockerClusterPage } from './pages/DockerClusterPage'
 import { DockerServicePage } from './pages/DockerServicePage'
 import { EnvironmentDetailPage } from './pages/EnvironmentDetailPage'
+import { EnvironmentLayout } from './pages/EnvironmentPage'
 import { EnvironmentsPage } from './pages/EnvironmentsPage'
 import { HelpPage } from './pages/HelpPage'
 import { HomePage } from './pages/HomePage'
@@ -72,10 +73,16 @@ export default function App() {
             path="/environments/:environmentId"
             element={
               <RequireAuth>
-                <EnvironmentDetailPage />
+                <EnvironmentLayout />
               </RequireAuth>
             }
-          />
+          >
+            <Route index element={<Navigate to="overview" replace />} />
+            <Route path="overview" element={<EnvironmentDetailPage view="overview" />} />
+            <Route path="expected-sets" element={<EnvironmentDetailPage view="expected-sets" />} />
+            <Route path="topology" element={<EnvironmentDetailPage view="topology" />} />
+            <Route path="templates" element={<EnvironmentDetailPage view="templates" />} />
+          </Route>
 
           <Route
             path="/admin/users"

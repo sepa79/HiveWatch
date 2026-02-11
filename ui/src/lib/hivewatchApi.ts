@@ -89,22 +89,44 @@ export type TomcatWebapp = {
   version: string | null
 }
 
-export type TomcatExpectedWebapp = {
+export type ExpectedSetMode = 'UNCONFIGURED' | 'EXPLICIT' | 'TEMPLATE'
+export type ExpectedSetTemplateKind = 'TOMCAT_WEBAPP_PATH' | 'DOCKER_SERVICE_PROFILE'
+
+export type ExpectedSetTemplate = {
   id: string
-  serverId: string
-  role: TomcatRole
-  path: string
+  kind: ExpectedSetTemplateKind
+  name: string
+  items: string[]
   createdAt: string
 }
 
-export type TomcatExpectedWebappItem = {
-  serverId: string
-  role: TomcatRole
-  path: string
+export type ExpectedSetTemplateCreateRequest = {
+  kind: ExpectedSetTemplateKind
+  name: string
+  items: string[]
 }
 
-export type TomcatExpectedWebappsReplaceRequest = {
-  items: TomcatExpectedWebappItem[]
+export type TomcatExpectedWebappsSpec = {
+  serverId: string
+  role: TomcatRole
+  mode: ExpectedSetMode
+  templateId: string | null
+  items: string[]
+}
+
+export type TomcatExpectedWebappsSpecReplaceRequest = {
+  specs: TomcatExpectedWebappsSpec[]
+}
+
+export type DockerExpectedServicesSpec = {
+  serverId: string
+  mode: ExpectedSetMode
+  templateId: string | null
+  items: string[]
+}
+
+export type DockerExpectedServicesSpecReplaceRequest = {
+  specs: DockerExpectedServicesSpec[]
 }
 
 export type TomcatTarget = {
@@ -217,6 +239,33 @@ export type EnvironmentStatus = {
   issues: DecisionIssue[]
 }
 
+export type DockerServiceListItem = {
+  targetId: string
+  profile: string
+  appName: string | null
+  buildVersion: string | null
+  outcomeKind: TomcatScanOutcomeKind | null
+  errorKind: TomcatScanErrorKind | null
+  errorMessage: string | null
+  healthStatus: string | null
+  scannedAt: string | null
+}
+
+export type DockerServicesPage = {
+  page: number
+  size: number
+  total: number
+  items: DockerServiceListItem[]
+}
+
+export type EnvironmentCreateRequest = {
+  name: string
+}
+
+export type EnvironmentUpdateRequest = {
+  name: string
+}
+
 async function readJsonOrThrow<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
@@ -262,21 +311,65 @@ export async function fetchTomcatTargets(environmentId: string, signal?: AbortSi
   return readJsonOrThrow<TomcatTarget[]>(response)
 }
 
-export async function fetchTomcatExpectedWebapps(environmentId: string, signal?: AbortSignal): Promise<TomcatExpectedWebapp[]> {
-  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-expected-webapps`, {
+export async function fetchExpectedSetTemplates(
+  kind: ExpectedSetTemplateKind,
+  signal?: AbortSignal,
+): Promise<ExpectedSetTemplate[]> {
+  const response = await fetch(`/api/v1/expected-set-templates?kind=${encodeURIComponent(kind)}`, {
     signal,
     headers: withDevAuthHeaders(),
   })
-  return readJsonOrThrow<TomcatExpectedWebapp[]>(response)
+  return readJsonOrThrow<ExpectedSetTemplate[]>(response)
 }
 
-export async function replaceTomcatExpectedWebapps(
-  environmentId: string,
-  request: TomcatExpectedWebappsReplaceRequest,
+export async function createExpectedSetTemplate(
+  request: ExpectedSetTemplateCreateRequest,
   signal?: AbortSignal,
-): Promise<TomcatExpectedWebapp[]> {
-  return putJsonOrThrow<TomcatExpectedWebapp[]>(
-    `/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-expected-webapps`,
+): Promise<ExpectedSetTemplate> {
+  return postJsonOrThrow<ExpectedSetTemplate>('/api/v1/admin/expected-set-templates', request, signal)
+}
+
+export async function fetchTomcatExpectedWebappsSpecs(
+  environmentId: string,
+  signal?: AbortSignal,
+): Promise<TomcatExpectedWebappsSpec[]> {
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/expected/tomcat-webapps`, {
+    signal,
+    headers: withDevAuthHeaders(),
+  })
+  return readJsonOrThrow<TomcatExpectedWebappsSpec[]>(response)
+}
+
+export async function replaceTomcatExpectedWebappsSpecs(
+  environmentId: string,
+  request: TomcatExpectedWebappsSpecReplaceRequest,
+  signal?: AbortSignal,
+): Promise<TomcatExpectedWebappsSpec[]> {
+  return putJsonOrThrow<TomcatExpectedWebappsSpec[]>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/expected/tomcat-webapps`,
+    request,
+    signal,
+  )
+}
+
+export async function fetchDockerExpectedServicesSpecs(
+  environmentId: string,
+  signal?: AbortSignal,
+): Promise<DockerExpectedServicesSpec[]> {
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/expected/docker-services`, {
+    signal,
+    headers: withDevAuthHeaders(),
+  })
+  return readJsonOrThrow<DockerExpectedServicesSpec[]>(response)
+}
+
+export async function replaceDockerExpectedServicesSpecs(
+  environmentId: string,
+  request: DockerExpectedServicesSpecReplaceRequest,
+  signal?: AbortSignal,
+): Promise<DockerExpectedServicesSpec[]> {
+  return putJsonOrThrow<DockerExpectedServicesSpec[]>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/expected/docker-services`,
     request,
     signal,
   )
@@ -363,6 +456,22 @@ export async function fetchActuatorTargets(environmentId: string, signal?: Abort
   return readJsonOrThrow<ActuatorTarget[]>(response)
 }
 
+export async function fetchDockerServicesPage(
+  environmentId: string,
+  serverId: string,
+  opts: { q?: string; page?: number; size?: number },
+  signal?: AbortSignal,
+): Promise<DockerServicesPage> {
+  const params = new URLSearchParams()
+  if (opts.q) params.set('q', opts.q)
+  if (opts.page != null) params.set('page', String(opts.page))
+  if (opts.size != null) params.set('size', String(opts.size))
+  const qs = params.toString()
+  const url = `/api/v1/environments/${encodeURIComponent(environmentId)}/docker-servers/${encodeURIComponent(serverId)}/services${qs ? `?${qs}` : ''}`
+  const response = await fetch(url, { signal, headers: withDevAuthHeaders() })
+  return readJsonOrThrow<DockerServicesPage>(response)
+}
+
 export async function fetchActuatorTarget(environmentId: string, targetId: string, signal?: AbortSignal): Promise<ActuatorTarget> {
   const response = await fetch(
     `/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets/${encodeURIComponent(targetId)}`,
@@ -422,6 +531,25 @@ export async function fetchMe(signal?: AbortSignal): Promise<UserSummary> {
 export async function fetchAdminEnvironments(signal?: AbortSignal): Promise<EnvironmentSummary[]> {
   const response = await fetch('/api/v1/admin/environments', { signal, headers: withDevAuthHeaders() })
   return readJsonOrThrow<EnvironmentSummary[]>(response)
+}
+
+export async function createAdminEnvironment(
+  request: EnvironmentCreateRequest,
+  signal?: AbortSignal,
+): Promise<EnvironmentSummary> {
+  return postJsonOrThrow<EnvironmentSummary>('/api/v1/admin/environments', request, signal)
+}
+
+export async function renameAdminEnvironment(
+  environmentId: string,
+  request: EnvironmentUpdateRequest,
+  signal?: AbortSignal,
+): Promise<EnvironmentSummary> {
+  return putJsonOrThrow<EnvironmentSummary>(
+    `/api/v1/admin/environments/${encodeURIComponent(environmentId)}`,
+    request,
+    signal,
+  )
 }
 
 export async function fetchUserEnvironmentVisibility(

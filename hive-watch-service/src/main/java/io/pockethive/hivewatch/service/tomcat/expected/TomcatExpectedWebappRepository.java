@@ -9,4 +9,3 @@ public interface TomcatExpectedWebappRepository extends JpaRepository<TomcatExpe
 
     void deleteByServerIdIn(List<UUID> serverIds);
 }
-

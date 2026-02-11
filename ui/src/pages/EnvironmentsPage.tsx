@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { fetchEnvironments, type EnvironmentSummary } from '../lib/hivewatchApi'
+import { useCallback, useEffect, useState } from 'react'
+import { createAdminEnvironment, fetchEnvironments, type EnvironmentSummary } from '../lib/hivewatchApi'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../lib/authContext'
 
 type LoadState =
   | { kind: 'loading' }
@@ -8,15 +9,44 @@ type LoadState =
   | { kind: 'error'; message: string }
 
 export function EnvironmentsPage() {
+  const { state: auth } = useAuth()
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
+  const [createName, setCreateName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  const refresh = useCallback((signal?: AbortSignal) => {
+    setState({ kind: 'loading' })
+    return fetchEnvironments(signal)
+      .then((environments) => setState({ kind: 'ready', environments }))
+      .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchEnvironments(controller.signal)
-      .then((environments) => setState({ kind: 'ready', environments }))
-      .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
+    refresh(controller.signal)
     return () => controller.abort()
-  }, [])
+  }, [refresh])
+
+  const isAdmin = auth.kind === 'ready' && auth.me.roles.includes('ADMIN')
+
+  const onCreate = useCallback(() => {
+    const name = createName.trim()
+    if (!name) {
+      setCreateError('Name is required')
+      return
+    }
+    setCreateError(null)
+    setCreating(true)
+    const controller = new AbortController()
+    createAdminEnvironment({ name }, controller.signal)
+      .then(() => {
+        setCreateName('')
+        return refresh(controller.signal)
+      })
+      .catch((e) => setCreateError(e instanceof Error ? e.message : 'Request failed'))
+      .finally(() => setCreating(false))
+  }, [createName, refresh])
 
   return (
     <div className="page">
@@ -25,6 +55,22 @@ export function EnvironmentsPage() {
 
       <div className="card" style={{ marginTop: 12 }}>
         <div className="h2">Environments</div>
+        {isAdmin ? (
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <input
+              className="input"
+              style={{ maxWidth: 420 }}
+              placeholder="New environment name…"
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              aria-label="New environment name"
+            />
+            <button type="button" className="button" onClick={onCreate} disabled={creating}>
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+            {createError ? <div className="muted">Error: {createError}</div> : null}
+          </div>
+        ) : null}
         {state.kind === 'loading' ? <div className="muted">Loading…</div> : null}
         {state.kind === 'error' ? <div className="muted">Error: {state.message}</div> : null}
         {state.kind === 'ready' && state.environments.length === 0 ? <div className="muted">No environments.</div> : null}
@@ -41,4 +87,3 @@ export function EnvironmentsPage() {
     </div>
   )
 }
-

@@ -13,6 +13,7 @@ import io.pockethive.hivewatch.service.api.DashboardRowDto;
 import io.pockethive.hivewatch.service.api.DashboardRowStatus;
 import io.pockethive.hivewatch.service.api.DashboardSectionDto;
 import io.pockethive.hivewatch.service.api.DashboardSectionKind;
+import io.pockethive.hivewatch.service.api.ExpectedSetMode;
 import io.pockethive.hivewatch.service.api.TomcatEnvironmentStatus;
 import io.pockethive.hivewatch.service.api.TomcatRole;
 import io.pockethive.hivewatch.service.api.TomcatWebappDto;
@@ -23,6 +24,14 @@ import io.pockethive.hivewatch.service.actuator.ActuatorTargetScanStateRepositor
 import io.pockethive.hivewatch.service.decision.DecisionEngine;
 import io.pockethive.hivewatch.service.decision.DecisionEvaluation;
 import io.pockethive.hivewatch.service.decision.DecisionInputs;
+import io.pockethive.hivewatch.service.expectedsets.ExpectedSetTemplateItemEntity;
+import io.pockethive.hivewatch.service.expectedsets.ExpectedSetTemplateItemRepository;
+import io.pockethive.hivewatch.service.expectedsets.docker.DockerExpectedServiceEntity;
+import io.pockethive.hivewatch.service.expectedsets.docker.DockerExpectedServiceRepository;
+import io.pockethive.hivewatch.service.expectedsets.docker.DockerExpectedServiceSpecEntity;
+import io.pockethive.hivewatch.service.expectedsets.docker.DockerExpectedServiceSpecRepository;
+import io.pockethive.hivewatch.service.expectedsets.tomcat.TomcatExpectedWebappSpecEntity;
+import io.pockethive.hivewatch.service.expectedsets.tomcat.TomcatExpectedWebappSpecRepository;
 import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
@@ -60,8 +69,12 @@ public class DashboardQueryService {
     private final TomcatTargetRepository tomcatTargetRepository;
     private final TomcatTargetScanStateRepository tomcatTargetScanStateRepository;
     private final TomcatExpectedWebappRepository tomcatExpectedWebappRepository;
+    private final TomcatExpectedWebappSpecRepository tomcatExpectedWebappSpecRepository;
     private final ActuatorTargetRepository actuatorTargetRepository;
     private final ActuatorTargetScanStateRepository actuatorTargetScanStateRepository;
+    private final DockerExpectedServiceSpecRepository dockerExpectedServiceSpecRepository;
+    private final DockerExpectedServiceRepository dockerExpectedServiceRepository;
+    private final ExpectedSetTemplateItemRepository expectedSetTemplateItemRepository;
     private final DecisionEngine decisionEngine;
     private final EnvironmentVisibilityService environmentVisibilityService;
 
@@ -70,8 +83,12 @@ public class DashboardQueryService {
             TomcatTargetRepository tomcatTargetRepository,
             TomcatTargetScanStateRepository tomcatTargetScanStateRepository,
             TomcatExpectedWebappRepository tomcatExpectedWebappRepository,
+            TomcatExpectedWebappSpecRepository tomcatExpectedWebappSpecRepository,
             ActuatorTargetRepository actuatorTargetRepository,
             ActuatorTargetScanStateRepository actuatorTargetScanStateRepository,
+            DockerExpectedServiceSpecRepository dockerExpectedServiceSpecRepository,
+            DockerExpectedServiceRepository dockerExpectedServiceRepository,
+            ExpectedSetTemplateItemRepository expectedSetTemplateItemRepository,
             DecisionEngine decisionEngine,
             EnvironmentVisibilityService environmentVisibilityService
     ) {
@@ -79,8 +96,12 @@ public class DashboardQueryService {
         this.tomcatTargetRepository = tomcatTargetRepository;
         this.tomcatTargetScanStateRepository = tomcatTargetScanStateRepository;
         this.tomcatExpectedWebappRepository = tomcatExpectedWebappRepository;
+        this.tomcatExpectedWebappSpecRepository = tomcatExpectedWebappSpecRepository;
         this.actuatorTargetRepository = actuatorTargetRepository;
         this.actuatorTargetScanStateRepository = actuatorTargetScanStateRepository;
+        this.dockerExpectedServiceSpecRepository = dockerExpectedServiceSpecRepository;
+        this.dockerExpectedServiceRepository = dockerExpectedServiceRepository;
+        this.expectedSetTemplateItemRepository = expectedSetTemplateItemRepository;
         this.decisionEngine = decisionEngine;
         this.environmentVisibilityService = environmentVisibilityService;
     }
@@ -126,7 +147,16 @@ public class DashboardQueryService {
                 .stream()
                 .collect(java.util.stream.Collectors.toMap(TomcatTargetScanStateEntity::getTargetId, Function.identity()));
 
-        Map<ExpectedKey, Set<String>> expectedWebappsByServerRole = serverIds.isEmpty()
+        Map<ExpectedKey, ExpectedSetSpec> tomcatExpectedSpecByServerRole = serverIds.isEmpty()
+                ? Map.of()
+                : tomcatExpectedWebappSpecRepository.findByServerIdIn(serverIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                s -> new ExpectedKey(s.getServerId(), s.getRole()),
+                                s -> new ExpectedSetSpec(s.getMode(), s.getTemplateId()),
+                                (a, b) -> a
+                        ));
+
+        Map<ExpectedKey, Set<String>> explicitExpectedWebappsByServerRole = serverIds.isEmpty()
                 ? Map.of()
                 : tomcatExpectedWebappRepository
                         .findByServerIdIn(serverIds)
@@ -134,6 +164,43 @@ public class DashboardQueryService {
                         .collect(java.util.stream.Collectors.groupingBy(
                                 e -> new ExpectedKey(e.getServerId(), e.getRole()),
                                 java.util.stream.Collectors.mapping(TomcatExpectedWebappEntity::getPath, java.util.stream.Collectors.toSet())
+                        ));
+
+        Map<UUID, ExpectedSetSpec> dockerExpectedSpecByServerId = serverIds.isEmpty()
+                ? Map.of()
+                : dockerExpectedServiceSpecRepository.findByServerIdIn(serverIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                DockerExpectedServiceSpecEntity::getServerId,
+                                s -> new ExpectedSetSpec(s.getMode(), s.getTemplateId()),
+                                (a, b) -> a
+                        ));
+
+        Map<UUID, Set<String>> explicitExpectedDockerProfilesByServerId = serverIds.isEmpty()
+                ? Map.of()
+                : dockerExpectedServiceRepository.findByServerIdIn(serverIds).stream()
+                        .collect(java.util.stream.Collectors.groupingBy(
+                                DockerExpectedServiceEntity::getServerId,
+                                java.util.stream.Collectors.mapping(DockerExpectedServiceEntity::getProfile, java.util.stream.Collectors.toSet())
+                        ));
+
+        Set<UUID> referencedTemplateIds = new HashSet<>();
+        for (ExpectedSetSpec s : tomcatExpectedSpecByServerRole.values()) {
+            if (s.mode() == ExpectedSetMode.TEMPLATE && s.templateId() != null) {
+                referencedTemplateIds.add(s.templateId());
+            }
+        }
+        for (ExpectedSetSpec s : dockerExpectedSpecByServerId.values()) {
+            if (s.mode() == ExpectedSetMode.TEMPLATE && s.templateId() != null) {
+                referencedTemplateIds.add(s.templateId());
+            }
+        }
+
+        Map<UUID, Set<String>> templateItemsByTemplateId = referencedTemplateIds.isEmpty()
+                ? Map.of()
+                : expectedSetTemplateItemRepository.findByTemplateIdIn(List.copyOf(referencedTemplateIds)).stream()
+                        .collect(java.util.stream.Collectors.groupingBy(
+                                ExpectedSetTemplateItemEntity::getTemplateId,
+                                java.util.stream.Collectors.mapping(ExpectedSetTemplateItemEntity::getValue, java.util.stream.Collectors.toSet())
                         ));
 
         Map<UUID, ActuatorTargetScanStateEntity> actuatorStateByTargetId = actuatorTargetScanStateRepository
@@ -211,9 +278,19 @@ public class DashboardQueryService {
                     serversByEnv.getOrDefault(env.getId(), List.of()),
                     envTomcats,
                     tomcatStateByTargetId,
-                    expectedWebappsByServerRole
+                    tomcatExpectedSpecByServerRole,
+                    explicitExpectedWebappsByServerRole,
+                    templateItemsByTemplateId
             ));
-            sections.add(computeDockerSection(env.getId(), serversByEnv.getOrDefault(env.getId(), List.of()), envActuators, actuatorStateByTargetId));
+            sections.add(computeDockerSection(
+                    env.getId(),
+                    serversByEnv.getOrDefault(env.getId(), List.of()),
+                    envActuators,
+                    actuatorStateByTargetId,
+                    dockerExpectedSpecByServerId,
+                    explicitExpectedDockerProfilesByServerId,
+                    templateItemsByTemplateId
+            ));
             sections.add(new DashboardSectionDto(DashboardSectionKind.AWS, "AWS (placeholder)", List.of(), List.of()));
 
             blocks.add(new DashboardEnvironmentBlockDto(env.getId(), env.getName(), summary, sections));
@@ -500,7 +577,9 @@ public class DashboardQueryService {
             List<ServerEntity> envServers,
             List<TomcatTargetEntity> envTargets,
             Map<UUID, TomcatTargetScanStateEntity> stateByTargetId,
-            Map<ExpectedKey, Set<String>> expectedWebappsByServerRole
+            Map<ExpectedKey, ExpectedSetSpec> expectedSpecByServerRole,
+            Map<ExpectedKey, Set<String>> explicitExpectedWebappsByServerRole,
+            Map<UUID, Set<String>> templateItemsByTemplateId
     ) {
         Map<UUID, ServerEntity> serverById = envServers.stream()
                 .collect(java.util.stream.Collectors.toMap(ServerEntity::getId, Function.identity()));
@@ -538,8 +617,11 @@ public class DashboardQueryService {
                     continue;
                 }
                 TomcatTargetScanStateEntity st = stateByTargetId.get(t.getId());
-                Set<String> expected = expectedWebappsByServerRole.getOrDefault(new ExpectedKey(serverId, c.role()), Set.of());
-                cells.add(tomcatRoleCell(c.role(), st, expected));
+                ExpectedKey expectedKey = new ExpectedKey(serverId, c.role());
+                ExpectedSetSpec spec = expectedSpecByServerRole.get(expectedKey);
+                Set<String> expected = expectedSetForSpec(spec, expectedKey, explicitExpectedWebappsByServerRole, templateItemsByTemplateId);
+                DashboardCellDto cell = tomcatRoleCell(c.role(), st, expected);
+                cells.add(cell);
             }
 
             DashboardCellDto tomcatVersion = uniformStringCell(
@@ -579,7 +661,10 @@ public class DashboardQueryService {
             UUID environmentId,
             List<ServerEntity> envServers,
             List<ActuatorTargetEntity> envTargets,
-            Map<UUID, ActuatorTargetScanStateEntity> stateByTargetId
+            Map<UUID, ActuatorTargetScanStateEntity> stateByTargetId,
+            Map<UUID, ExpectedSetSpec> expectedSpecByServerId,
+            Map<UUID, Set<String>> explicitExpectedProfilesByServerId,
+            Map<UUID, Set<String>> templateItemsByTemplateId
     ) {
         if (envTargets.isEmpty()) {
             return new DashboardSectionDto(DashboardSectionKind.DOCKER, "Docker Swarm", List.of(), List.of());
@@ -593,6 +678,14 @@ public class DashboardQueryService {
         for (ActuatorTargetEntity t : envTargets) {
             targetsByServerId.computeIfAbsent(t.getServerId(), ignored -> new ArrayList<>()).add(t);
             profiles.add(t.getProfile());
+        }
+
+        Map<UUID, Set<String>> expectedProfilesByServerId = new HashMap<>();
+        for (UUID serverId : targetsByServerId.keySet()) {
+            ExpectedSetSpec spec = expectedSpecByServerId.get(serverId);
+            Set<String> expected = expectedSetForSpec(spec, serverId, explicitExpectedProfilesByServerId, templateItemsByTemplateId);
+            expectedProfilesByServerId.put(serverId, expected);
+            profiles.addAll(expected);
         }
 
         List<String> profileOrder = new ArrayList<>(profiles);
@@ -621,10 +714,15 @@ public class DashboardQueryService {
             }
 
             List<DashboardCellDto> cells = new ArrayList<>();
+            Set<String> expectedProfiles = expectedProfilesByServerId.getOrDefault(serverId, Set.of());
             for (String profile : profileOrder) {
                 ActuatorTargetEntity t = byProfile.get(profile);
                 if (t == null) {
-                    cells.add(new DashboardCellDto(DashboardCellKind.ERROR, null, "Missing service: " + profile));
+                    if (expectedProfiles.contains(profile)) {
+                        cells.add(new DashboardCellDto(DashboardCellKind.ERROR, null, "Missing expected service: " + profile));
+                    } else {
+                        cells.add(new DashboardCellDto(DashboardCellKind.UNKNOWN, null, null));
+                    }
                     continue;
                 }
                 ActuatorTargetScanStateEntity st = stateByTargetId.get(t.getId());
@@ -638,6 +736,42 @@ public class DashboardQueryService {
 
         rows.sort(Comparator.comparing(DashboardRowDto::label));
         return new DashboardSectionDto(DashboardSectionKind.DOCKER, "Docker Swarm", columns, List.copyOf(rows));
+    }
+
+    private static Set<String> expectedSetForSpec(
+            ExpectedSetSpec spec,
+            ExpectedKey key,
+            Map<ExpectedKey, Set<String>> explicit,
+            Map<UUID, Set<String>> templateItemsByTemplateId
+    ) {
+        if (spec == null || spec.mode() == ExpectedSetMode.UNCONFIGURED) {
+            return Set.of();
+        }
+        if (spec.mode() == ExpectedSetMode.EXPLICIT) {
+            return explicit.getOrDefault(key, Set.of());
+        }
+        if (spec.mode() == ExpectedSetMode.TEMPLATE && spec.templateId() != null) {
+            return templateItemsByTemplateId.getOrDefault(spec.templateId(), Set.of());
+        }
+        return Set.of();
+    }
+
+    private static Set<String> expectedSetForSpec(
+            ExpectedSetSpec spec,
+            UUID serverId,
+            Map<UUID, Set<String>> explicit,
+            Map<UUID, Set<String>> templateItemsByTemplateId
+    ) {
+        if (spec == null || spec.mode() == ExpectedSetMode.UNCONFIGURED) {
+            return Set.of();
+        }
+        if (spec.mode() == ExpectedSetMode.EXPLICIT) {
+            return explicit.getOrDefault(serverId, Set.of());
+        }
+        if (spec.mode() == ExpectedSetMode.TEMPLATE && spec.templateId() != null) {
+            return templateItemsByTemplateId.getOrDefault(spec.templateId(), Set.of());
+        }
+        return Set.of();
     }
 
     private static DashboardRowStatus computeRowStatus(List<DashboardCellDto> cells) {
@@ -740,5 +874,8 @@ public class DashboardQueryService {
     }
 
     private record ExpectedKey(UUID serverId, TomcatRole role) {
+    }
+
+    private record ExpectedSetSpec(ExpectedSetMode mode, UUID templateId) {
     }
 }
