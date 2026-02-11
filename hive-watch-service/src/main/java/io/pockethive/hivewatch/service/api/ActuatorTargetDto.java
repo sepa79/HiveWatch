@@ -10,7 +10,8 @@ public record ActuatorTargetDto(
         String baseUrl,
         int port,
         String profile,
+        int connectTimeoutMs,
+        int requestTimeoutMs,
         ActuatorTargetStateDto state
 ) {
 }
-

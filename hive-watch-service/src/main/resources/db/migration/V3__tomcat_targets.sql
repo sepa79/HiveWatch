@@ -34,6 +34,9 @@ create table if not exists hw_tomcat_target_scan_state (
   outcome_kind text not null,
   error_kind text null,
   error_message text null,
+  tomcat_version text null,
+  java_version text null,
+  os text null,
   webapps jsonb not null
 );
 
@@ -63,6 +66,7 @@ create table if not exists hw_actuator_target_scan_state (
   error_message text null,
   health_status text null,
   app_name text null,
+  build_version text null,
   cpu_usage double precision null,
   memory_used_bytes bigint null
 );

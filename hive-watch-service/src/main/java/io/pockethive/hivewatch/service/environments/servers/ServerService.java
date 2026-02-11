@@ -2,6 +2,7 @@ package io.pockethive.hivewatch.service.environments.servers;
 
 import io.pockethive.hivewatch.service.api.ServerCreateRequestDto;
 import io.pockethive.hivewatch.service.api.ServerDto;
+import io.pockethive.hivewatch.service.api.ServerUpdateRequestDto;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import java.time.Instant;
 import java.util.List;
@@ -43,6 +44,37 @@ public class ServerService {
         return toDto(created);
     }
 
+    @Transactional
+    public ServerDto update(UUID environmentId, UUID serverId, ServerUpdateRequestDto request) {
+        requireEnvironment(environmentId);
+        validateUpdateRequest(request);
+
+        ServerEntity existing = serverRepository.findById(serverId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Server not found"));
+        if (!existing.getEnvironmentId().equals(environmentId)) {
+            throw new ResponseStatusException(NOT_FOUND, "Server not found");
+        }
+
+        ServerEntity updated = serverRepository.save(new ServerEntity(
+                existing.getId(),
+                existing.getEnvironmentId(),
+                request.name().trim(),
+                existing.getCreatedAt()
+        ));
+        return toDto(updated);
+    }
+
+    @Transactional
+    public void delete(UUID environmentId, UUID serverId) {
+        requireEnvironment(environmentId);
+        ServerEntity existing = serverRepository.findById(serverId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Server not found"));
+        if (!existing.getEnvironmentId().equals(environmentId)) {
+            throw new ResponseStatusException(NOT_FOUND, "Server not found");
+        }
+        serverRepository.deleteById(serverId);
+    }
+
     private void requireEnvironment(UUID environmentId) {
         if (!environmentRepository.existsById(environmentId)) {
             throw new ResponseStatusException(NOT_FOUND, "Environment not found");
@@ -58,8 +90,16 @@ public class ServerService {
         }
     }
 
+    private static void validateUpdateRequest(ServerUpdateRequestDto request) {
+        if (request == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "Request body is required");
+        }
+        if (request.name() == null || request.name().trim().isBlank()) {
+            throw new ResponseStatusException(BAD_REQUEST, "name is required");
+        }
+    }
+
     static ServerDto toDto(ServerEntity entity) {
         return new ServerDto(entity.getId(), entity.getEnvironmentId(), entity.getName());
     }
 }
-

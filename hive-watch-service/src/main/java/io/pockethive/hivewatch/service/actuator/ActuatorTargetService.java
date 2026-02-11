@@ -3,6 +3,7 @@ package io.pockethive.hivewatch.service.actuator;
 import io.pockethive.hivewatch.service.api.ActuatorTargetCreateRequestDto;
 import io.pockethive.hivewatch.service.api.ActuatorTargetDto;
 import io.pockethive.hivewatch.service.api.ActuatorTargetStateDto;
+import io.pockethive.hivewatch.service.api.ActuatorTargetUpdateRequestDto;
 import io.pockethive.hivewatch.service.api.TomcatScanErrorKind;
 import io.pockethive.hivewatch.service.api.TomcatScanOutcomeKind;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
@@ -62,6 +63,15 @@ public class ActuatorTargetService {
         return targets.stream().map(t -> toDto(t, serverById.get(t.getServerId()), states.get(t.getId()))).toList();
     }
 
+    @Transactional(readOnly = true)
+    public UUID environmentIdForTargetOrThrow(UUID targetId) {
+        ActuatorTargetEntity target = actuatorTargetRepository.findById(targetId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Actuator target not found"));
+        ServerEntity server = serverRepository.findById(target.getServerId())
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Server not found for target"));
+        return server.getEnvironmentId();
+    }
+
     @Transactional
     public ActuatorTargetDto create(UUID environmentId, ActuatorTargetCreateRequestDto request) {
         requireEnvironment(environmentId);
@@ -87,6 +97,54 @@ public class ActuatorTargetService {
         return toDto(created, server, null);
     }
 
+    @Transactional
+    public ActuatorTargetDto update(UUID environmentId, UUID targetId, ActuatorTargetUpdateRequestDto request) {
+        requireEnvironment(environmentId);
+        validateUpdateRequest(request);
+
+        ActuatorTargetEntity existing = actuatorTargetRepository.findById(targetId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Actuator target not found"));
+        ServerEntity existingServer = serverRepository.findById(existing.getServerId())
+                .orElseThrow(() -> new IllegalStateException("Server not found for actuator target: " + existing.getId()));
+        if (!existingServer.getEnvironmentId().equals(environmentId)) {
+            throw new ResponseStatusException(NOT_FOUND, "Actuator target not found");
+        }
+
+        if (!serverRepository.existsByIdAndEnvironmentId(request.serverId(), environmentId)) {
+            throw new ResponseStatusException(BAD_REQUEST, "serverId is not part of this environment");
+        }
+        ServerEntity server = serverRepository.findById(request.serverId())
+                .orElseThrow(() -> new IllegalStateException("Server not found"));
+
+        ActuatorTargetEntity updated = actuatorTargetRepository.save(new ActuatorTargetEntity(
+                existing.getId(),
+                request.serverId(),
+                request.role(),
+                request.baseUrl().trim(),
+                request.port(),
+                request.profile().trim(),
+                request.connectTimeoutMs(),
+                request.requestTimeoutMs(),
+                existing.getCreatedAt()
+        ));
+        actuatorTargetScanStateRepository.deleteById(updated.getId());
+
+        return toDto(updated, server, null);
+    }
+
+    @Transactional
+    public void delete(UUID environmentId, UUID targetId) {
+        requireEnvironment(environmentId);
+        ActuatorTargetEntity existing = actuatorTargetRepository.findById(targetId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Actuator target not found"));
+        ServerEntity server = serverRepository.findById(existing.getServerId())
+                .orElseThrow(() -> new IllegalStateException("Server not found for actuator target: " + existing.getId()));
+        if (!server.getEnvironmentId().equals(environmentId)) {
+            throw new ResponseStatusException(NOT_FOUND, "Actuator target not found");
+        }
+        actuatorTargetRepository.deleteById(targetId);
+    }
+
     private void requireEnvironment(UUID environmentId) {
         if (!environmentRepository.existsById(environmentId)) {
             throw new ResponseStatusException(NOT_FOUND, "Environment not found");
@@ -94,6 +152,34 @@ public class ActuatorTargetService {
     }
 
     private static void validateCreateRequest(ActuatorTargetCreateRequestDto request) {
+        if (request == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "Request body is required");
+        }
+        if (request.serverId() == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "serverId is required");
+        }
+        if (request.role() == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "role is required");
+        }
+        if (request.port() < 1 || request.port() > 65535) {
+            throw new ResponseStatusException(BAD_REQUEST, "port must be 1..65535");
+        }
+        if (request.connectTimeoutMs() <= 0) {
+            throw new ResponseStatusException(BAD_REQUEST, "connectTimeoutMs must be > 0");
+        }
+        if (request.requestTimeoutMs() <= 0) {
+            throw new ResponseStatusException(BAD_REQUEST, "requestTimeoutMs must be > 0");
+        }
+
+        try {
+            ActuatorTargetValidation.parseBaseUrl(request.baseUrl());
+            ActuatorTargetValidation.sanitizeProfile(request.profile());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    private static void validateUpdateRequest(ActuatorTargetUpdateRequestDto request) {
         if (request == null) {
             throw new ResponseStatusException(BAD_REQUEST, "Request body is required");
         }
@@ -134,6 +220,7 @@ public class ActuatorTargetService {
                     state.getErrorMessage(),
                     state.getHealthStatus(),
                     state.getAppName(),
+                    state.getBuildVersion(),
                     state.getCpuUsage(),
                     state.getMemoryUsedBytes()
             );
@@ -147,6 +234,8 @@ public class ActuatorTargetService {
                 target.getBaseUrl(),
                 target.getPort(),
                 target.getProfile(),
+                target.getConnectTimeoutMs(),
+                target.getRequestTimeoutMs(),
                 stateDto
         );
     }
@@ -156,6 +245,7 @@ public class ActuatorTargetService {
             Instant scannedAt,
             String healthStatus,
             String appName,
+            String buildVersion,
             Double cpuUsage,
             Long memoryUsedBytes
     ) {
@@ -167,6 +257,7 @@ public class ActuatorTargetService {
                 null,
                 healthStatus,
                 appName,
+                buildVersion,
                 cpuUsage,
                 memoryUsedBytes
         );
@@ -179,6 +270,7 @@ public class ActuatorTargetService {
                 TomcatScanOutcomeKind.ERROR,
                 kind == null ? TomcatScanErrorKind.UNKNOWN : kind,
                 truncate(message, 600),
+                null,
                 null,
                 null,
                 null,

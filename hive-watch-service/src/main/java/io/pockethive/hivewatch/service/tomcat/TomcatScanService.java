@@ -66,9 +66,9 @@ public class TomcatScanService {
 
     private void scanInternal(TomcatTargetEntity target) {
         Instant now = Instant.now();
-        TomcatManagerHtmlClient.TomcatManagerFetchResult result = tomcatManagerHtmlClient.fetchWebapps(target);
+        TomcatManagerHtmlClient.TomcatManagerFetchResult result = tomcatManagerHtmlClient.fetchSnapshot(target);
         TomcatTargetScanStateEntity state = result.ok()
-                ? TomcatTargetService.successState(target.getId(), now, result.webapps())
+                ? TomcatTargetService.successState(target.getId(), now, result.tomcatVersion(), result.javaVersion(), result.os(), result.webapps())
                 : TomcatTargetService.errorState(target.getId(), now, result.errorKind(), result.errorMessage());
         tomcatTargetScanStateRepository.save(state);
     }

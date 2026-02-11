@@ -1,4 +1,4 @@
-const ROUTE_ROOTS = ['/environments', '/admin', '/help', '/diagnostics']
+const ROUTE_ROOTS = ['/dashboard', '/environments', '/admin', '/help', '/diagnostics', '/login']
 
 function isBoundaryMatch(pathname: string, root: string, idx: number): boolean {
   const afterIdx = idx + root.length

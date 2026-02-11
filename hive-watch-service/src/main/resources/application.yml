@@ -30,3 +30,9 @@ hivewatch:
     mode: ${HW_AUTH_MODE:DEV_HEADER}
     jwt:
       username-claim: ${HW_AUTH_JWT_USERNAME_CLAIM:preferred_username}
+  scans:
+    manual-enabled: ${HW_SCAN_MANUAL_ENABLED:false}
+    scheduler:
+      enabled: ${HW_SCAN_SCHEDULER_ENABLED:true}
+      fixed-delay-ms: ${HW_SCAN_SCHEDULER_DELAY_MS:15000}
+      initial-delay-ms: ${HW_SCAN_SCHEDULER_INITIAL_DELAY_MS:2000}

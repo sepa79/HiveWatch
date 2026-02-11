@@ -4,12 +4,16 @@ import {
   createActuatorTarget,
   createServer,
   createTomcatTarget,
+  deleteActuatorTarget,
+  deleteServer,
+  deleteTomcatTarget,
   fetchActuatorTargets,
   fetchEnvironmentStatus,
   fetchServers,
   fetchTomcatTargets,
-  scanEnvironmentActuators,
-  scanEnvironmentTomcats,
+  updateActuatorTarget,
+  updateServer,
+  updateTomcatTarget,
   type ActuatorTarget,
   type ActuatorTargetCreateRequest,
   type EnvironmentStatus,
@@ -32,8 +36,17 @@ export function EnvironmentDetailPage() {
   const [saving, setSaving] = useState(false)
   const [savingActuator, setSavingActuator] = useState(false)
   const [savingServer, setSavingServer] = useState(false)
-  const [scanning, setScanning] = useState(false)
-  const [scanningActuators, setScanningActuators] = useState(false)
+  const [editingServerId, setEditingServerId] = useState<string | null>(null)
+  const [serverEditName, setServerEditName] = useState('')
+  const [savingServerEdit, setSavingServerEdit] = useState(false)
+
+  const [editingTomcatTargetId, setEditingTomcatTargetId] = useState<string | null>(null)
+  const [tomcatEditForm, setTomcatEditForm] = useState<TomcatTargetCreateRequest | null>(null)
+  const [savingTomcatEdit, setSavingTomcatEdit] = useState(false)
+
+  const [editingActuatorTargetId, setEditingActuatorTargetId] = useState<string | null>(null)
+  const [actuatorEditForm, setActuatorEditForm] = useState<ActuatorTargetCreateRequest | null>(null)
+  const [savingActuatorEdit, setSavingActuatorEdit] = useState(false)
 
   const [form, setForm] = useState<TomcatTargetCreateRequest>({
     serverId: '',
@@ -157,6 +170,38 @@ export function EnvironmentDetailPage() {
     return date.toLocaleString()
   }
 
+  const beginServerEdit = (server: Server) => {
+    setEditingServerId(server.id)
+    setServerEditName(server.name)
+  }
+
+  const beginTomcatEdit = (t: TomcatTarget) => {
+    setEditingTomcatTargetId(t.id)
+    setTomcatEditForm({
+      serverId: t.serverId,
+      role: t.role,
+      baseUrl: t.baseUrl,
+      port: t.port,
+      username: t.username,
+      password: '',
+      connectTimeoutMs: t.connectTimeoutMs,
+      requestTimeoutMs: t.requestTimeoutMs,
+    })
+  }
+
+  const beginActuatorEdit = (t: ActuatorTarget) => {
+    setEditingActuatorTargetId(t.id)
+    setActuatorEditForm({
+      serverId: t.serverId,
+      role: t.role,
+      baseUrl: t.baseUrl,
+      port: t.port,
+      profile: t.profile,
+      connectTimeoutMs: t.connectTimeoutMs,
+      requestTimeoutMs: t.requestTimeoutMs,
+    })
+  }
+
   return (
     <div className="page">
       <h1 className="h1">{title}</h1>
@@ -203,36 +248,8 @@ export function EnvironmentDetailPage() {
         <div className="muted" style={{ marginTop: 6 }}>
           If HiveWatch runs in Docker, <code>localhost</code> means the container, so use the dummy-stack container hostnames (see dummy-stack README).
         </div>
-
-        <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="button"
-            disabled={scanning || state.kind !== 'ready' || state.targets.length === 0}
-            onClick={() => {
-              const controller = new AbortController()
-              setScanning(true)
-              scanEnvironmentTomcats(environmentId, controller.signal)
-                .then(() => refresh())
-                .finally(() => setScanning(false))
-            }}
-          >
-            {scanning ? 'Scanning…' : 'Scan all targets'}
-          </button>
-          <button
-            type="button"
-            className="button"
-            disabled={scanningActuators || state.kind !== 'ready' || state.actuatorTargets.length === 0}
-            onClick={() => {
-              const controller = new AbortController()
-              setScanningActuators(true)
-              scanEnvironmentActuators(environmentId, controller.signal)
-                .then(() => refresh())
-                .finally(() => setScanningActuators(false))
-            }}
-          >
-            {scanningActuators ? 'Scanning…' : 'Scan microservices'}
-          </button>
+        <div className="muted" style={{ marginTop: 6 }}>
+          Scans run automatically on a background schedule (no manual scanning from UI).
         </div>
 
         {state.kind === 'loading' ? <div className="muted" style={{ marginTop: 10 }}>Loading…</div> : null}
@@ -259,7 +276,71 @@ export function EnvironmentDetailPage() {
                     <div className="muted" style={{ marginLeft: 'auto' }}>
                       {targets.length} Tomcat · {actuatorTargets.length} microservices
                     </div>
+                    <button
+                      type="button"
+                      className="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        beginServerEdit(server)
+                      }}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      className="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        if (!window.confirm(`Delete server '${server.name}'? This will also delete its targets.`)) return
+                        const controller = new AbortController()
+                        deleteServer(environmentId, server.id, controller.signal).then(() => refresh())
+                      }}
+                    >
+                      Delete
+                    </button>
                   </summary>
+
+                  {editingServerId === server.id ? (
+                    <div className="card" style={{ marginTop: 10, padding: 12, maxWidth: 720 }}>
+                      <div className="h2">Rename server</div>
+                      <form
+                        style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'end' }}
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          const controller = new AbortController()
+                          setSavingServerEdit(true)
+                          updateServer(environmentId, server.id, { name: serverEditName }, controller.signal)
+                            .then(() => refresh())
+                            .then(() => setEditingServerId(null))
+                            .finally(() => setSavingServerEdit(false))
+                        }}
+                      >
+                        <label className="field" style={{ flex: 1 }}>
+                          <div className="fieldLabel">Name</div>
+                          <input
+                            className="fieldInput"
+                            value={serverEditName}
+                            onChange={(e) => setServerEditName(e.target.value)}
+                            required
+                          />
+                        </label>
+                        <button type="submit" className="button" disabled={savingServerEdit}>
+                          {savingServerEdit ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={() => {
+                            setEditingServerId(null)
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    </div>
+                  ) : null}
 
                   {targets.length === 0 ? <div className="muted" style={{ marginTop: 10 }}>No targets.</div> : null}
 
@@ -271,6 +352,30 @@ export function EnvironmentDetailPage() {
                         <div className="muted" style={{ marginLeft: 'auto' }}>
                           {t.baseUrl}:{t.port}
                         </div>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            beginTomcatEdit(t)
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            if (!window.confirm(`Delete Tomcat target '${server.name} · ${roleLabel(t.role)}'?`)) return
+                            const controller = new AbortController()
+                            deleteTomcatTarget(environmentId, t.id, controller.signal).then(() => refresh())
+                          }}
+                        >
+                          Delete
+                        </button>
                       </summary>
 
                       <div className="kv" style={{ marginTop: 10 }}>
@@ -280,6 +385,12 @@ export function EnvironmentDetailPage() {
                         <div className="v">{t.state ? formatTs(t.state.scannedAt) : '—'}</div>
                         <div className="k">webapps</div>
                         <div className="v">{t.state ? t.state.webapps.length : 0}</div>
+                        <div className="k">username</div>
+                        <div className="v">{t.username}</div>
+                        <div className="k">timeouts</div>
+                        <div className="v">
+                          {t.connectTimeoutMs}ms / {t.requestTimeoutMs}ms
+                        </div>
                         {t.state && t.state.outcomeKind === 'ERROR' ? (
                           <>
                             <div className="k">error</div>
@@ -293,11 +404,159 @@ export function EnvironmentDetailPage() {
                       {t.state && t.state.webapps.length > 0 ? (
                         <ul className="list" style={{ marginTop: 10 }}>
                           {t.state.webapps.map((w) => (
-                            <li key={w}>
-                              <code>{w}</code>
+                            <li key={w.path}>
+                              <code>
+                                {w.name}
+                                {w.version ? `##${w.version}` : ''}
+                              </code>
                             </li>
                           ))}
                         </ul>
+                      ) : null}
+
+                      {editingTomcatTargetId === t.id && tomcatEditForm ? (
+                        <div className="card" style={{ marginTop: 12, padding: 12 }}>
+                          <div className="h2">Edit Tomcat target</div>
+                          <div className="muted" style={{ marginTop: 6 }}>
+                            Password is required on update (stored in DB; not returned by API).
+                          </div>
+                          <form
+                            style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              if (!tomcatEditForm.password.trim()) {
+                                window.alert('Password is required')
+                                return
+                              }
+                              const controller = new AbortController()
+                              setSavingTomcatEdit(true)
+                              updateTomcatTarget(environmentId, t.id, tomcatEditForm, controller.signal)
+                                .then(() => refresh())
+                                .then(() => setEditingTomcatTargetId(null))
+                                .finally(() => setSavingTomcatEdit(false))
+                            }}
+                          >
+                            <label className="field">
+                              <div className="fieldLabel">Server</div>
+                              <select
+                                className="fieldInput"
+                                value={tomcatEditForm.serverId}
+                                onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, serverId: e.target.value } : f))}
+                                required
+                              >
+                                {state.kind === 'ready'
+                                  ? state.servers.map((s) => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.name}
+                                      </option>
+                                    ))
+                                  : null}
+                              </select>
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Role</div>
+                              <select
+                                className="fieldInput"
+                                value={tomcatEditForm.role}
+                                onChange={(e) =>
+                                  setTomcatEditForm((f) => (f ? { ...f, role: e.target.value as TomcatRole } : f))
+                                }
+                                required
+                              >
+                                <option value="PAYMENTS">payments</option>
+                                <option value="SERVICES">services</option>
+                                <option value="AUTH">auth</option>
+                              </select>
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Base URL</div>
+                              <input
+                                className="fieldInput"
+                                value={tomcatEditForm.baseUrl}
+                                onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, baseUrl: e.target.value } : f))}
+                                required
+                              />
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Port</div>
+                              <input
+                                className="fieldInput"
+                                type="number"
+                                value={tomcatEditForm.port}
+                                onChange={(e) =>
+                                  setTomcatEditForm((f) => (f ? { ...f, port: Number(e.target.value) } : f))
+                                }
+                                min={1}
+                                max={65535}
+                                required
+                              />
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Username</div>
+                              <input
+                                className="fieldInput"
+                                value={tomcatEditForm.username}
+                                onChange={(e) =>
+                                  setTomcatEditForm((f) => (f ? { ...f, username: e.target.value } : f))
+                                }
+                                required
+                              />
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Password</div>
+                              <input
+                                className="fieldInput"
+                                type="password"
+                                value={tomcatEditForm.password}
+                                onChange={(e) =>
+                                  setTomcatEditForm((f) => (f ? { ...f, password: e.target.value } : f))
+                                }
+                                required
+                              />
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Connect timeout (ms)</div>
+                              <input
+                                className="fieldInput"
+                                type="number"
+                                value={tomcatEditForm.connectTimeoutMs}
+                                onChange={(e) =>
+                                  setTomcatEditForm((f) => (f ? { ...f, connectTimeoutMs: Number(e.target.value) } : f))
+                                }
+                                min={1}
+                                required
+                              />
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Request timeout (ms)</div>
+                              <input
+                                className="fieldInput"
+                                type="number"
+                                value={tomcatEditForm.requestTimeoutMs}
+                                onChange={(e) =>
+                                  setTomcatEditForm((f) => (f ? { ...f, requestTimeoutMs: Number(e.target.value) } : f))
+                                }
+                                min={1}
+                                required
+                              />
+                            </label>
+
+                            <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
+                              <button type="submit" className="button" disabled={savingTomcatEdit}>
+                                {savingTomcatEdit ? 'Saving…' : 'Save changes'}
+                              </button>
+                              <button
+                                type="button"
+                                className="button"
+                                onClick={() => {
+                                  setEditingTomcatTargetId(null)
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        </div>
                       ) : null}
                     </details>
                   ))}
@@ -317,6 +576,30 @@ export function EnvironmentDetailPage() {
                         <div className="muted" style={{ marginLeft: 'auto' }}>
                           {t.baseUrl}:{t.port}
                         </div>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            beginActuatorEdit(t)
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            if (!window.confirm(`Delete microservice '${server.name} · ${t.profile}'?`)) return
+                            const controller = new AbortController()
+                            deleteActuatorTarget(environmentId, t.id, controller.signal).then(() => refresh())
+                          }}
+                        >
+                          Delete
+                        </button>
                       </summary>
 
                       <div className="kv" style={{ marginTop: 10 }}>
@@ -328,10 +611,16 @@ export function EnvironmentDetailPage() {
                         <div className="v">{t.state?.healthStatus ?? '—'}</div>
                         <div className="k">app</div>
                         <div className="v">{t.state?.appName ?? '—'}</div>
+                        <div className="k">version</div>
+                        <div className="v">{t.state?.buildVersion ?? '—'}</div>
                         <div className="k">cpu</div>
                         <div className="v">{formatCpu(t.state?.cpuUsage ?? null)}</div>
                         <div className="k">memory</div>
                         <div className="v">{formatBytes(t.state?.memoryUsedBytes ?? null)}</div>
+                        <div className="k">timeouts</div>
+                        <div className="v">
+                          {t.connectTimeoutMs}ms / {t.requestTimeoutMs}ms
+                        </div>
                         {t.state && t.state.outcomeKind === 'ERROR' ? (
                           <>
                             <div className="k">error</div>
@@ -341,6 +630,133 @@ export function EnvironmentDetailPage() {
                           </>
                         ) : null}
                       </div>
+
+                      {editingActuatorTargetId === t.id && actuatorEditForm ? (
+                        <div className="card" style={{ marginTop: 12, padding: 12 }}>
+                          <div className="h2">Edit microservice (Actuator target)</div>
+                          <form
+                            style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              const controller = new AbortController()
+                              setSavingActuatorEdit(true)
+                              updateActuatorTarget(environmentId, t.id, actuatorEditForm, controller.signal)
+                                .then(() => refresh())
+                                .then(() => setEditingActuatorTargetId(null))
+                                .finally(() => setSavingActuatorEdit(false))
+                            }}
+                          >
+                            <label className="field">
+                              <div className="fieldLabel">Server</div>
+                              <select
+                                className="fieldInput"
+                                value={actuatorEditForm.serverId}
+                                onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, serverId: e.target.value } : f))}
+                                required
+                              >
+                                {state.kind === 'ready'
+                                  ? state.servers.map((s) => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.name}
+                                      </option>
+                                    ))
+                                  : null}
+                              </select>
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Role</div>
+                              <select
+                                className="fieldInput"
+                                value={actuatorEditForm.role}
+                                onChange={(e) =>
+                                  setActuatorEditForm((f) => (f ? { ...f, role: e.target.value as TomcatRole } : f))
+                                }
+                                required
+                              >
+                                <option value="PAYMENTS">payments</option>
+                                <option value="SERVICES">services</option>
+                                <option value="AUTH">auth</option>
+                              </select>
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Base URL</div>
+                              <input
+                                className="fieldInput"
+                                value={actuatorEditForm.baseUrl}
+                                onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, baseUrl: e.target.value } : f))}
+                                required
+                              />
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Port</div>
+                              <input
+                                className="fieldInput"
+                                type="number"
+                                value={actuatorEditForm.port}
+                                onChange={(e) =>
+                                  setActuatorEditForm((f) => (f ? { ...f, port: Number(e.target.value) } : f))
+                                }
+                                min={1}
+                                max={65535}
+                                required
+                              />
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Profile</div>
+                              <input
+                                className="fieldInput"
+                                value={actuatorEditForm.profile}
+                                onChange={(e) =>
+                                  setActuatorEditForm((f) => (f ? { ...f, profile: e.target.value } : f))
+                                }
+                                required
+                              />
+                            </label>
+                            <div />
+                            <label className="field">
+                              <div className="fieldLabel">Connect timeout (ms)</div>
+                              <input
+                                className="fieldInput"
+                                type="number"
+                                value={actuatorEditForm.connectTimeoutMs}
+                                onChange={(e) =>
+                                  setActuatorEditForm((f) => (f ? { ...f, connectTimeoutMs: Number(e.target.value) } : f))
+                                }
+                                min={1}
+                                required
+                              />
+                            </label>
+                            <label className="field">
+                              <div className="fieldLabel">Request timeout (ms)</div>
+                              <input
+                                className="fieldInput"
+                                type="number"
+                                value={actuatorEditForm.requestTimeoutMs}
+                                onChange={(e) =>
+                                  setActuatorEditForm((f) => (f ? { ...f, requestTimeoutMs: Number(e.target.value) } : f))
+                                }
+                                min={1}
+                                required
+                              />
+                            </label>
+
+                            <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
+                              <button type="submit" className="button" disabled={savingActuatorEdit}>
+                                {savingActuatorEdit ? 'Saving…' : 'Save changes'}
+                              </button>
+                              <button
+                                type="button"
+                                className="button"
+                                onClick={() => {
+                                  setEditingActuatorTargetId(null)
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      ) : null}
                     </details>
                   ))}
                 </details>

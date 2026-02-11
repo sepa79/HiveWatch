@@ -7,9 +7,9 @@ services:
     environment:
       TOMCAT_INSTANCES: payments,services,auth
       TOMCAT_SERVER_LABEL: "NFT-01 / Touchpoint"
-      WEBAPPS_PAYMENTS: "PaymentApp1,PaymentApp2,SharedPaymentsApp"
-      WEBAPPS_SERVICES: "ServicesApp1,TouchpointGateway,SharedServicesApp"
-      WEBAPPS_AUTH: "AuthApp1,SSOConsole,SharedAuthApp"
+      WEBAPPS_PAYMENTS: "PaymentApp1##2.0.0,PaymentApp2##2.0.0,SharedPaymentsApp##2.0.0"
+      WEBAPPS_SERVICES: "ServicesApp1##2.0.0,TouchpointGateway##2.0.0,SharedServicesApp##2.0.0"
+      WEBAPPS_AUTH: "AuthApp1##2.0.0,SSOConsole##2.0.0,SharedAuthApp##2.0.0"
     ports:
       - "19111:8081" # payments
       - "19112:8082" # services
@@ -25,9 +25,9 @@ services:
     environment:
       TOMCAT_INSTANCES: payments,services,auth
       TOMCAT_SERVER_LABEL: "NFT-01 / Services"
-      WEBAPPS_PAYMENTS: "PaymentApp2,PaymentApp3,SharedPaymentsApp"
-      WEBAPPS_SERVICES: "ServicesApp1,ServicesApp2,SharedServicesApp"
-      WEBAPPS_AUTH: "AuthApp1,AuthApp2,SharedAuthApp"
+      WEBAPPS_PAYMENTS: "PaymentApp2##2.0.0,PaymentApp3##2.0.0,SharedPaymentsApp##2.0.0"
+      WEBAPPS_SERVICES: "ServicesApp1##2.0.0,ServicesApp2##2.0.0,SharedServicesApp##2.0.0"
+      WEBAPPS_AUTH: "AuthApp1##2.0.0,AuthApp2##2.0.0,SharedAuthApp##2.0.0"
     ports:
       - "19114:8081" # payments
       - "19115:8082" # services
@@ -56,9 +56,9 @@ services:
     environment:
       TOMCAT_INSTANCES: payments,services,auth
       TOMCAT_SERVER_LABEL: "NFT-02 / All-in-one"
-      WEBAPPS_PAYMENTS: "PaymentApp1,PaymentApp2,PaymentApp3,SharedPaymentsApp"
-      WEBAPPS_SERVICES: "ServicesApp1,ServicesApp2,TouchpointGateway,SharedServicesApp"
-      WEBAPPS_AUTH: "AuthApp1,AuthApp2,SSOConsole,SharedAuthApp"
+      WEBAPPS_PAYMENTS: "PaymentApp1##2.0.0,PaymentApp2##2.0.0,PaymentApp3##2.0.0,SharedPaymentsApp##2.0.0"
+      WEBAPPS_SERVICES: "ServicesApp1##2.0.0,ServicesApp2##2.0.0,TouchpointGateway##2.0.0,SharedServicesApp##2.0.0"
+      WEBAPPS_AUTH: "AuthApp1##2.0.0,AuthApp2##2.0.0,SSOConsole##2.0.0,SharedAuthApp##2.0.0"
     ports:
       - "19211:8081" # payments
       - "19212:8082" # services
@@ -87,9 +87,9 @@ services:
     environment:
       TOMCAT_INSTANCES: payments,services,auth
       TOMCAT_SERVER_LABEL: "Release-01 / All-in-one"
-      WEBAPPS_PAYMENTS: "PaymentApp1,PaymentApp2,PaymentApp3,SharedPaymentsApp"
-      WEBAPPS_SERVICES: "ServicesApp1,ServicesApp2,TouchpointGateway,SharedServicesApp"
-      WEBAPPS_AUTH: "AuthApp1,AuthApp2,SSOConsole,SharedAuthApp"
+      WEBAPPS_PAYMENTS: "PaymentApp1##2.0.0,PaymentApp2##2.0.0,PaymentApp3##2.0.0,SharedPaymentsApp##2.0.0"
+      WEBAPPS_SERVICES: "ServicesApp1##2.0.0,ServicesApp2##2.0.0,TouchpointGateway##2.0.0,SharedServicesApp##2.0.0"
+      WEBAPPS_AUTH: "AuthApp1##2.0.0,AuthApp2##2.0.0,SSOConsole##2.0.0,SharedAuthApp##2.0.0"
     ports:
       - "19311:8081" # payments
       - "19312:8082" # services

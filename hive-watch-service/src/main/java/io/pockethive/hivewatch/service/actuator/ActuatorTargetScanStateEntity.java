@@ -38,6 +38,9 @@ public class ActuatorTargetScanStateEntity {
     @Column(name = "app_name")
     private String appName;
 
+    @Column(name = "build_version")
+    private String buildVersion;
+
     @Column(name = "cpu_usage")
     private Double cpuUsage;
 
@@ -55,6 +58,7 @@ public class ActuatorTargetScanStateEntity {
             String errorMessage,
             String healthStatus,
             String appName,
+            String buildVersion,
             Double cpuUsage,
             Long memoryUsedBytes
     ) {
@@ -65,6 +69,7 @@ public class ActuatorTargetScanStateEntity {
         this.errorMessage = errorMessage;
         this.healthStatus = healthStatus;
         this.appName = appName;
+        this.buildVersion = buildVersion;
         this.cpuUsage = cpuUsage;
         this.memoryUsedBytes = memoryUsedBytes;
     }
@@ -97,6 +102,10 @@ public class ActuatorTargetScanStateEntity {
         return appName;
     }
 
+    public String getBuildVersion() {
+        return buildVersion;
+    }
+
     public Double getCpuUsage() {
         return cpuUsage;
     }
@@ -105,4 +114,3 @@ public class ActuatorTargetScanStateEntity {
         return memoryUsedBytes;
     }
 }
-

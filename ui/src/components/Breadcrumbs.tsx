@@ -15,6 +15,13 @@ function buildCrumbs(pathname: string): Crumb[] {
   if (parts.length === 0) return [{ label: 'Dashboard', to: '/' }]
 
   const section = parts[0]
+  if (section === 'dashboard') {
+    if (parts.length === 1) return [{ label: 'Dashboard', to: '/dashboard' }]
+    if (parts[1] === 'matrix') {
+      return [{ label: 'Dashboard', to: '/dashboard' }, { label: 'Matrix' }, ...parts.slice(2).map((p) => ({ label: p }))]
+    }
+    return [{ label: 'Dashboard', to: '/dashboard' }, ...parts.slice(1).map((p) => ({ label: p }))]
+  }
   if (section === 'environments')
     return [{ label: 'Environments', to: '/environments' }, ...parts.slice(1).map((p) => ({ label: p }))]
   if (section === 'admin') return [{ label: 'Admin', to: '/admin/users' }, ...parts.slice(1).map((p) => ({ label: p }))]

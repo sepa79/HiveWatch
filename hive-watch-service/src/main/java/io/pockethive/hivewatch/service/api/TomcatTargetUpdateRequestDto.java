@@ -2,16 +2,15 @@ package io.pockethive.hivewatch.service.api;
 
 import java.util.UUID;
 
-public record TomcatTargetDto(
-        UUID id,
+public record TomcatTargetUpdateRequestDto(
         UUID serverId,
-        String serverName,
         TomcatRole role,
         String baseUrl,
         int port,
         String username,
+        String password,
         int connectTimeoutMs,
-        int requestTimeoutMs,
-        TomcatTargetStateDto state
+        int requestTimeoutMs
 ) {
 }
+

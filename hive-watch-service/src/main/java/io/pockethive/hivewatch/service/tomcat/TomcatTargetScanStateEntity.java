@@ -2,6 +2,7 @@ package io.pockethive.hivewatch.service.tomcat;
 
 import io.pockethive.hivewatch.service.api.TomcatScanErrorKind;
 import io.pockethive.hivewatch.service.api.TomcatScanOutcomeKind;
+import io.pockethive.hivewatch.service.api.TomcatWebappDto;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -36,9 +37,18 @@ public class TomcatTargetScanStateEntity {
     @Column(name = "error_message")
     private String errorMessage;
 
+    @Column(name = "tomcat_version")
+    private String tomcatVersion;
+
+    @Column(name = "java_version")
+    private String javaVersion;
+
+    @Column(name = "os")
+    private String os;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "webapps", nullable = false, columnDefinition = "jsonb")
-    private List<String> webapps = new ArrayList<>();
+    private List<TomcatWebappDto> webapps = new ArrayList<>();
 
     protected TomcatTargetScanStateEntity() {
     }
@@ -49,13 +59,19 @@ public class TomcatTargetScanStateEntity {
             TomcatScanOutcomeKind outcomeKind,
             TomcatScanErrorKind errorKind,
             String errorMessage,
-            List<String> webapps
+            String tomcatVersion,
+            String javaVersion,
+            String os,
+            List<TomcatWebappDto> webapps
     ) {
         this.targetId = targetId;
         this.scannedAt = scannedAt;
         this.outcomeKind = outcomeKind;
         this.errorKind = errorKind;
         this.errorMessage = errorMessage;
+        this.tomcatVersion = tomcatVersion;
+        this.javaVersion = javaVersion;
+        this.os = os;
         this.webapps = webapps == null ? new ArrayList<>() : new ArrayList<>(webapps);
     }
 
@@ -79,8 +95,19 @@ public class TomcatTargetScanStateEntity {
         return errorMessage;
     }
 
-    public List<String> getWebapps() {
+    public String getTomcatVersion() {
+        return tomcatVersion;
+    }
+
+    public String getJavaVersion() {
+        return javaVersion;
+    }
+
+    public String getOs() {
+        return os;
+    }
+
+    public List<TomcatWebappDto> getWebapps() {
         return List.copyOf(webapps);
     }
 }
-

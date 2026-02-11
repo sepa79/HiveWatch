@@ -38,6 +38,7 @@ public class ActuatorClient {
 
             JsonNode info = getJson(client, infoUri, target.getRequestTimeoutMs());
             String appName = textOrThrow(info.path("app"), "name");
+            String buildVersion = textOrNull(info.path("app").path("build"), "version");
 
             JsonNode cpu = getJson(client, cpuUri, target.getRequestTimeoutMs());
             double cpuUsage = metricValueAsDoubleOrThrow(cpu);
@@ -45,7 +46,7 @@ public class ActuatorClient {
             JsonNode mem = getJson(client, memUri, target.getRequestTimeoutMs());
             long memoryUsedBytes = metricValueAsLongOrThrow(mem);
 
-            return ActuatorFetchResult.success(healthStatus, appName, cpuUsage, memoryUsedBytes);
+            return ActuatorFetchResult.success(healthStatus, appName, buildVersion, cpuUsage, memoryUsedBytes);
         } catch (IllegalArgumentException e) {
             return ActuatorFetchResult.error(TomcatScanErrorKind.UNKNOWN, e.getMessage());
         } catch (ActuatorFetchException e) {
@@ -109,6 +110,19 @@ public class ActuatorClient {
         return value.asText();
     }
 
+    private static String textOrNull(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isTextual()) {
+            return null;
+        }
+        String s = value.asText();
+        if (s == null) {
+            return null;
+        }
+        String trimmed = s.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+
     private static double metricValueAsDoubleOrThrow(JsonNode metric) {
         JsonNode measurements = metric.get("measurements");
         if (measurements == null || !measurements.isArray() || measurements.isEmpty()) {
@@ -154,17 +168,24 @@ public class ActuatorClient {
             boolean ok,
             String healthStatus,
             String appName,
+            String buildVersion,
             Double cpuUsage,
             Long memoryUsedBytes,
             TomcatScanErrorKind errorKind,
             String errorMessage
     ) {
-        static ActuatorFetchResult success(String healthStatus, String appName, double cpuUsage, long memoryUsedBytes) {
-            return new ActuatorFetchResult(true, healthStatus, appName, cpuUsage, memoryUsedBytes, null, null);
+        static ActuatorFetchResult success(
+                String healthStatus,
+                String appName,
+                String buildVersion,
+                double cpuUsage,
+                long memoryUsedBytes
+        ) {
+            return new ActuatorFetchResult(true, healthStatus, appName, buildVersion, cpuUsage, memoryUsedBytes, null, null);
         }
 
         static ActuatorFetchResult error(TomcatScanErrorKind kind, String message) {
-            return new ActuatorFetchResult(false, null, null, null, null, kind, message);
+            return new ActuatorFetchResult(false, null, null, null, null, null, kind, message);
         }
     }
 }

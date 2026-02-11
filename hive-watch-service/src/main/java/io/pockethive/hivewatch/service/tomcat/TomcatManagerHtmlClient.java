@@ -1,6 +1,7 @@
 package io.pockethive.hivewatch.service.tomcat;
 
 import io.pockethive.hivewatch.service.api.TomcatScanErrorKind;
+import io.pockethive.hivewatch.service.api.TomcatWebappDto;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
@@ -14,7 +15,7 @@ import java.util.Base64;
 import java.util.List;
 
 final class TomcatManagerHtmlClient {
-    TomcatManagerFetchResult fetchWebapps(TomcatTargetEntity target) {
+    TomcatManagerFetchResult fetchSnapshot(TomcatTargetEntity target) {
         URI managerUri;
         try {
             managerUri = managerHtmlUri(target);
@@ -61,8 +62,8 @@ final class TomcatManagerHtmlClient {
         }
 
         try {
-            List<String> webapps = TomcatManagerHtmlParser.parseWebapps(response.body());
-            return TomcatManagerFetchResult.success(webapps);
+            TomcatManagerHtmlParser.TomcatManagerSnapshot snapshot = TomcatManagerHtmlParser.parseSnapshot(response.body());
+            return TomcatManagerFetchResult.success(snapshot.webapps(), snapshot.tomcatVersion(), snapshot.javaVersion(), snapshot.os());
         } catch (RuntimeException e) {
             return TomcatManagerFetchResult.error(TomcatScanErrorKind.PARSE, e.getMessage());
         }
@@ -99,16 +100,24 @@ final class TomcatManagerHtmlClient {
 
     record TomcatManagerFetchResult(
             boolean ok,
-            List<String> webapps,
+            List<TomcatWebappDto> webapps,
+            String tomcatVersion,
+            String javaVersion,
+            String os,
             TomcatScanErrorKind errorKind,
             String errorMessage
     ) {
-        static TomcatManagerFetchResult success(List<String> webapps) {
-            return new TomcatManagerFetchResult(true, webapps, null, null);
+        static TomcatManagerFetchResult success(
+                List<TomcatWebappDto> webapps,
+                String tomcatVersion,
+                String javaVersion,
+                String os
+        ) {
+            return new TomcatManagerFetchResult(true, webapps, tomcatVersion, javaVersion, os, null, null);
         }
 
         static TomcatManagerFetchResult error(TomcatScanErrorKind kind, String message) {
-            return new TomcatManagerFetchResult(false, List.of(), kind, message);
+            return new TomcatManagerFetchResult(false, List.of(), null, null, null, kind, message);
         }
     }
 }

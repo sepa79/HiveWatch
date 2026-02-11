@@ -39,7 +39,16 @@ export type TomcatTargetState = {
   outcomeKind: TomcatScanOutcomeKind
   errorKind: TomcatScanErrorKind | null
   errorMessage: string | null
-  webapps: string[]
+  tomcatVersion: string | null
+  javaVersion: string | null
+  os: string | null
+  webapps: TomcatWebapp[]
+}
+
+export type TomcatWebapp = {
+  path: string
+  name: string
+  version: string | null
 }
 
 export type TomcatTarget = {
@@ -49,6 +58,9 @@ export type TomcatTarget = {
   role: TomcatRole
   baseUrl: string
   port: number
+  username: string
+  connectTimeoutMs: number
+  requestTimeoutMs: number
   state: TomcatTargetState | null
 }
 
@@ -70,6 +82,7 @@ export type ActuatorTargetState = {
   errorMessage: string | null
   healthStatus: string | null
   appName: string | null
+  buildVersion: string | null
   cpuUsage: number | null
   memoryUsedBytes: number | null
 }
@@ -82,6 +95,8 @@ export type ActuatorTarget = {
   baseUrl: string
   port: number
   profile: string
+  connectTimeoutMs: number
+  requestTimeoutMs: number
   state: ActuatorTargetState | null
 }
 
@@ -102,6 +117,10 @@ export type Server = {
 }
 
 export type ServerCreateRequest = {
+  name: string
+}
+
+export type ServerUpdateRequest = {
   name: string
 }
 
@@ -205,6 +224,30 @@ export async function createServer(
   return postJsonOrThrow<Server>(`/api/v1/environments/${encodeURIComponent(environmentId)}/servers`, request, signal)
 }
 
+export async function updateServer(
+  environmentId: string,
+  serverId: string,
+  request: ServerUpdateRequest,
+  signal?: AbortSignal,
+): Promise<Server> {
+  return putJsonOrThrow<Server>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(serverId)}`,
+    request,
+    signal,
+  )
+}
+
+export async function deleteServer(environmentId: string, serverId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/servers/${encodeURIComponent(serverId)}`, {
+    method: 'DELETE',
+    signal,
+    headers: withDevAuthHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+}
+
 export async function createTomcatTarget(
   environmentId: string,
   request: TomcatTargetCreateRequest,
@@ -213,8 +256,27 @@ export async function createTomcatTarget(
   return postJsonOrThrow<TomcatTarget>(`/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-targets`, request, signal)
 }
 
-export async function scanEnvironmentTomcats(environmentId: string, signal?: AbortSignal): Promise<TomcatTarget[]> {
-  return postJsonOrThrow<TomcatTarget[]>(`/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-targets/scan`, undefined, signal)
+export async function updateTomcatTarget(
+  environmentId: string,
+  targetId: string,
+  request: TomcatTargetCreateRequest,
+  signal?: AbortSignal,
+): Promise<TomcatTarget> {
+  return putJsonOrThrow<TomcatTarget>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-targets/${encodeURIComponent(targetId)}`,
+    request,
+    signal,
+  )
+}
+
+export async function deleteTomcatTarget(environmentId: string, targetId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/tomcat-targets/${encodeURIComponent(targetId)}`,
+    { method: 'DELETE', signal, headers: withDevAuthHeaders() },
+  )
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
 }
 
 export async function fetchActuatorTargets(environmentId: string, signal?: AbortSignal): Promise<ActuatorTarget[]> {
@@ -233,8 +295,27 @@ export async function createActuatorTarget(
   return postJsonOrThrow<ActuatorTarget>(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets`, request, signal)
 }
 
-export async function scanEnvironmentActuators(environmentId: string, signal?: AbortSignal): Promise<ActuatorTarget[]> {
-  return postJsonOrThrow<ActuatorTarget[]>(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets/scan`, undefined, signal)
+export async function updateActuatorTarget(
+  environmentId: string,
+  targetId: string,
+  request: ActuatorTargetCreateRequest,
+  signal?: AbortSignal,
+): Promise<ActuatorTarget> {
+  return putJsonOrThrow<ActuatorTarget>(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets/${encodeURIComponent(targetId)}`,
+    request,
+    signal,
+  )
+}
+
+export async function deleteActuatorTarget(environmentId: string, targetId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(
+    `/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets/${encodeURIComponent(targetId)}`,
+    { method: 'DELETE', signal, headers: withDevAuthHeaders() },
+  )
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
 }
 
 export async function fetchUsers(signal?: AbortSignal): Promise<UserSummary[]> {

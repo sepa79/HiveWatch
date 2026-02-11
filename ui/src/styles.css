@@ -45,6 +45,20 @@ a,
   cursor: pointer;
 }
 
+.linkButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}
+
 input,
 textarea,
 [contenteditable='true'] {
@@ -1043,4 +1057,108 @@ code {
 
 :root[data-theme='light'] .menuSep {
   background: rgba(10, 20, 30, 0.12);
+}
+
+.tableWrap {
+  margin-top: 10px;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid var(--border2);
+  background: var(--panel2);
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.table th,
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border2);
+  border-right: 1px solid var(--border2);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 800;
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(4px);
+  z-index: 1;
+}
+
+:root[data-theme='light'] .table th {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.table th:last-child,
+.table td:last-child {
+  border-right: 0;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.toolsRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.toolsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolsToggleActive {
+  border-color: rgba(51, 225, 255, 0.35);
+  background: rgba(51, 225, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(51, 225, 255, 0.08);
+}
+
+:root[data-theme='light'] .toolsToggleActive {
+  border-color: rgba(20, 120, 210, 0.28);
+  background: rgba(20, 120, 210, 0.1);
+  box-shadow: 0 0 0 1px rgba(20, 120, 210, 0.08);
+}
+
+.statusIconLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-decoration: none;
+  color: inherit;
+}
+
+.statusIconLink:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme='light'] .statusIconLink:hover {
+  border-color: rgba(10, 20, 30, 0.14);
+  background: rgba(10, 20, 30, 0.035);
+}
+
+.tableRowFocus td {
+  background: rgba(51, 225, 255, 0.04);
+}
+
+:root[data-theme='light'] .tableRowFocus td {
+  background: rgba(20, 120, 210, 0.06);
 }

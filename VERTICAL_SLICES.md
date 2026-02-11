@@ -31,3 +31,10 @@ Dev note (for now): schema is treated as rewriteable; `./build-hive-watch.sh --d
 - [x] Auth: OIDC/JWT skeleton (server-side enforcement)
 - [x] Admin UI: users + environment visibility
 - [x] Dashboard filtered per user (no placeholder visibility)
+
+## Dashboard roadmap (configurable, drill-down)
+- [ ] Dashboard views: high-level overview + detailed matrix (switch in `pageToolsBar`)
+- [ ] Replace N+1 dashboard fetch with single `/api/v1/dashboard` payload (sections + cells + links)
+- [ ] Dashboard sections per Environment (Tomcats / Docker / AWS / …), each with aggregations + drill-down
+- [ ] Drill-down: cluster → service list (filters, search, paging) → service details
+- [ ] Make expected “apps/components” lists configurable (types/templates), and drive mismatches from rules (not UI)

@@ -73,7 +73,15 @@ public class ActuatorScanService {
         Instant now = Instant.now();
         ActuatorClient.ActuatorFetchResult result = actuatorClient.fetch(target);
         ActuatorTargetScanStateEntity state = result.ok()
-                ? ActuatorTargetService.successState(target.getId(), now, result.healthStatus(), result.appName(), result.cpuUsage(), result.memoryUsedBytes())
+                ? ActuatorTargetService.successState(
+                        target.getId(),
+                        now,
+                        result.healthStatus(),
+                        result.appName(),
+                        result.buildVersion(),
+                        result.cpuUsage(),
+                        result.memoryUsedBytes()
+                )
                 : ActuatorTargetService.errorState(target.getId(), now, result.errorKind(), result.errorMessage());
         actuatorTargetScanStateRepository.save(state);
     }

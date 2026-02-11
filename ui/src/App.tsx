@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { RequireAuth } from './components/RequireAuth'
 import { AdminUsersPage } from './pages/AdminUsersPage'
-import { DashboardPage } from './pages/DashboardPage'
+import { DashboardMatrixPage, DashboardOverviewPage } from './pages/DashboardPage'
 import { DiagnosticsPage } from './pages/DiagnosticsPage'
 import { EnvironmentDetailPage } from './pages/EnvironmentDetailPage'
 import { EnvironmentsPage } from './pages/EnvironmentsPage'
@@ -21,7 +21,23 @@ export default function App() {
             path="/dashboard"
             element={
               <RequireAuth>
-                <DashboardPage />
+                <DashboardOverviewPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/dashboard/matrix"
+            element={
+              <RequireAuth>
+                <DashboardMatrixPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/dashboard/matrix/:environmentId"
+            element={
+              <RequireAuth>
+                <DashboardMatrixPage />
               </RequireAuth>
             }
           />

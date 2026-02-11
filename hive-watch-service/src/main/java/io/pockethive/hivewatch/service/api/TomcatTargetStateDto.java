@@ -8,7 +8,9 @@ public record TomcatTargetStateDto(
         TomcatScanOutcomeKind outcomeKind,
         TomcatScanErrorKind errorKind,
         String errorMessage,
-        List<String> webapps
+        String tomcatVersion,
+        String javaVersion,
+        String os,
+        List<TomcatWebappDto> webapps
 ) {
 }
-

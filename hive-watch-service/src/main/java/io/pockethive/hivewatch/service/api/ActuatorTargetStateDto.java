@@ -9,8 +9,8 @@ public record ActuatorTargetStateDto(
         String errorMessage,
         String healthStatus,
         String appName,
+        String buildVersion,
         Double cpuUsage,
         Long memoryUsedBytes
 ) {
 }
-

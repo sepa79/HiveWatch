@@ -3,6 +3,7 @@ package io.pockethive.hivewatch.service.tomcat;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,8 +16,10 @@ class TomcatManagerHtmlParserTest {
                 StandardCharsets.UTF_8
         );
 
-        List<String> webapps = TomcatManagerHtmlParser.parseWebapps(html);
-        assertEquals(List.of("/", "/PaymentApp1", "/PaymentApp2", "/manager"), webapps);
+        TomcatManagerHtmlParser.TomcatManagerSnapshot snapshot = TomcatManagerHtmlParser.parseSnapshot(html);
+        assertEquals(
+                Set.of("/", "/PaymentApp1", "/PaymentApp2", "/manager"),
+                snapshot.webapps().stream().map(w -> w.path()).collect(java.util.stream.Collectors.toSet())
+        );
     }
 }
-
