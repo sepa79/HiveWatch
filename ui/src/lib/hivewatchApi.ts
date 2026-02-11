@@ -613,6 +613,32 @@ export async function deleteAdminEnvironment(environmentId: string, signal?: Abo
   }
 }
 
+export type EnvironmentCloneRequest = {
+  sourceEnvironmentId: string
+}
+
+export type EnvironmentCloneResult = {
+  servers: number
+  tomcatTargets: number
+  actuatorTargets: number
+  tomcatExpectedSpecs: number
+  tomcatExpectedItems: number
+  dockerExpectedSpecs: number
+  dockerExpectedItems: number
+}
+
+export async function cloneAdminEnvironmentConfig(
+  environmentId: string,
+  request: EnvironmentCloneRequest,
+  signal?: AbortSignal,
+): Promise<EnvironmentCloneResult> {
+  return postJsonOrThrow<EnvironmentCloneResult>(
+    `/api/v1/admin/environments/${encodeURIComponent(environmentId)}/clone`,
+    request,
+    signal,
+  )
+}
+
 export async function fetchUserEnvironmentVisibility(
   userId: string,
   signal?: AbortSignal,

@@ -1,6 +1,8 @@
 package io.pockethive.hivewatch.service.environments;
 
 import io.pockethive.hivewatch.service.api.EnvironmentCreateRequestDto;
+import io.pockethive.hivewatch.service.api.EnvironmentCloneRequestDto;
+import io.pockethive.hivewatch.service.api.EnvironmentCloneResultDto;
 import io.pockethive.hivewatch.service.api.EnvironmentSummaryDto;
 import io.pockethive.hivewatch.service.api.EnvironmentUpdateRequestDto;
 import java.util.List;
@@ -22,9 +24,11 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 @RestController
 public class AdminEnvironmentController {
     private final EnvironmentRepository environmentRepository;
+    private final EnvironmentCloneService environmentCloneService;
 
-    public AdminEnvironmentController(EnvironmentRepository environmentRepository) {
+    public AdminEnvironmentController(EnvironmentRepository environmentRepository, EnvironmentCloneService environmentCloneService) {
         this.environmentRepository = environmentRepository;
+        this.environmentCloneService = environmentCloneService;
     }
 
     @GetMapping("/api/v1/admin/environments")
@@ -81,5 +85,19 @@ public class AdminEnvironmentController {
         EnvironmentEntity env = environmentRepository.findById(environmentId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Environment not found"));
         environmentRepository.delete(env);
+    }
+
+    @PostMapping("/api/v1/admin/environments/{environmentId}/clone")
+    public EnvironmentCloneResultDto cloneFrom(
+            @PathVariable("environmentId") UUID environmentId,
+            @RequestBody EnvironmentCloneRequestDto request
+    ) {
+        if (request == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "Request body is required");
+        }
+        if (request.sourceEnvironmentId() == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "sourceEnvironmentId is required");
+        }
+        return environmentCloneService.cloneConfig(environmentId, request.sourceEnvironmentId());
     }
 }

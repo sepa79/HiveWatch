@@ -5,32 +5,28 @@ import {
   createExpectedSetTemplate,
   createServer,
   createTomcatTarget,
-  fetchDockerExpectedServicesSpecs,
   fetchExpectedSetTemplates,
+  fetchAdminEnvironments,
+  cloneAdminEnvironmentConfig,
   deleteActuatorTarget,
   deleteServer,
   deleteTomcatTarget,
   fetchActuatorTargets,
   fetchEnvironmentStatus,
   fetchServers,
-  fetchTomcatExpectedWebappsSpecs,
   fetchTomcatTargets,
-  replaceDockerExpectedServicesSpecs,
-  replaceTomcatExpectedWebappsSpecs,
   renameAdminEnvironment,
   updateActuatorTarget,
   updateServer,
   updateTomcatTarget,
   type ActuatorTarget,
   type ActuatorTargetCreateRequest,
-  type DockerExpectedServicesSpec,
+  type EnvironmentSummary,
   type EnvironmentStatus,
-  type ExpectedSetMode,
   type ExpectedSetTemplateCreateRequest,
   type ExpectedSetTemplate,
   type Server,
   type ServerCreateRequest,
-  type TomcatExpectedWebappsSpec,
   type TomcatTarget,
   type TomcatTargetCreateRequest,
   type TomcatRole,
@@ -45,8 +41,6 @@ type LoadState =
       targets: TomcatTarget[]
       actuatorTargets: ActuatorTarget[]
       status: EnvironmentStatus
-      tomcatExpectedSpecs: TomcatExpectedWebappsSpec[]
-      dockerExpectedSpecs: DockerExpectedServicesSpec[]
       tomcatTemplates: ExpectedSetTemplate[]
       dockerTemplates: ExpectedSetTemplate[]
     }
@@ -66,13 +60,6 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
   const [editingServerId, setEditingServerId] = useState<string | null>(null)
   const [serverEditName, setServerEditName] = useState('')
   const [savingServerEdit, setSavingServerEdit] = useState(false)
-
-  const [tomcatExpectedSpecsDraft, setTomcatExpectedSpecsDraft] = useState<TomcatExpectedWebappsSpec[]>([])
-  const [dockerExpectedSpecsDraft, setDockerExpectedSpecsDraft] = useState<DockerExpectedServicesSpec[]>([])
-  const [savingExpectedTomcat, setSavingExpectedTomcat] = useState(false)
-  const [savingExpectedDocker, setSavingExpectedDocker] = useState(false)
-  const [expectedTomcatError, setExpectedTomcatError] = useState<string | null>(null)
-  const [expectedDockerError, setExpectedDockerError] = useState<string | null>(null)
 
   const [creatingTomcatTemplate, setCreatingTomcatTemplate] = useState(false)
   const [creatingDockerTemplate, setCreatingDockerTemplate] = useState(false)
@@ -116,33 +103,30 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
 
   const [serverForm, setServerForm] = useState<ServerCreateRequest>({ name: '' })
 
+  const [cloneSources, setCloneSources] = useState<EnvironmentSummary[] | null>(null)
+  const [cloneSourceId, setCloneSourceId] = useState<string>('')
+  const [cloning, setCloning] = useState(false)
+  const [cloneError, setCloneError] = useState<string | null>(null)
+
   const refresh = (signal?: AbortSignal) =>
     Promise.all([
       fetchServers(environmentId, signal),
       fetchTomcatTargets(environmentId, signal),
       fetchActuatorTargets(environmentId, signal),
       fetchEnvironmentStatus(environmentId, signal),
-      fetchTomcatExpectedWebappsSpecs(environmentId, signal),
-      fetchDockerExpectedServicesSpecs(environmentId, signal),
       fetchExpectedSetTemplates('TOMCAT_WEBAPP_PATH', signal),
       fetchExpectedSetTemplates('DOCKER_SERVICE_PROFILE', signal),
     ])
-      .then(([servers, targets, actuatorTargets, status, tomcatExpectedSpecs, dockerExpectedSpecs, tomcatTemplates, dockerTemplates]) => {
+      .then(([servers, targets, actuatorTargets, status, tomcatTemplates, dockerTemplates]) => {
         setState({
           kind: 'ready',
           servers,
           targets,
           actuatorTargets,
           status,
-          tomcatExpectedSpecs,
-          dockerExpectedSpecs,
           tomcatTemplates,
           dockerTemplates,
         })
-        setTomcatExpectedSpecsDraft(tomcatExpectedSpecs)
-        setDockerExpectedSpecsDraft(dockerExpectedSpecs)
-        setExpectedTomcatError(null)
-        setExpectedDockerError(null)
       })
       .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
 
@@ -292,71 +276,24 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
 
-  const setTomcatSpec = (key: { serverId: string; role: TomcatRole }, patch: Partial<TomcatExpectedWebappsSpec>) => {
-    setTomcatExpectedSpecsDraft((prev) =>
-      prev.map((s) => (s.serverId === key.serverId && s.role === key.role ? { ...s, ...patch } : s)),
-    )
-  }
-
-  const setDockerSpec = (serverId: string, patch: Partial<DockerExpectedServicesSpec>) => {
-    setDockerExpectedSpecsDraft((prev) => prev.map((s) => (s.serverId === serverId ? { ...s, ...patch } : s)))
-  }
-
-  const saveTomcatExpectedSpecs = () => {
-    if (state.kind !== 'ready') return
-    if (tomcatExpectedSpecsDraft.some((s) => s.mode === 'UNCONFIGURED')) {
-      setExpectedTomcatError('All Tomcat expected-set specs must be configured (EXPLICIT or TEMPLATE).')
-      return
-    }
-
-    setSavingExpectedTomcat(true)
-    setExpectedTomcatError(null)
-    const controller = new AbortController()
-    replaceTomcatExpectedWebappsSpecs(
-      environmentId,
-      {
-        specs: tomcatExpectedSpecsDraft.map((s) =>
-          s.mode === 'TEMPLATE'
-            ? { ...s, items: [] }
-            : s,
-        ),
-      },
-      controller.signal,
-    )
-      .then(() => refresh())
-      .catch((e) => setExpectedTomcatError(e instanceof Error ? e.message : 'Request failed'))
-      .finally(() => setSavingExpectedTomcat(false))
-  }
-
-  const saveDockerExpectedSpecs = () => {
-    if (state.kind !== 'ready') return
-    const dockerServerIds = new Set(state.actuatorTargets.map((t) => t.serverId))
-    const specs = dockerExpectedSpecsDraft.filter((s) => dockerServerIds.has(s.serverId))
-    if (specs.some((s) => s.mode === 'UNCONFIGURED')) {
-      setExpectedDockerError('All Docker expected-set specs must be configured (EXPLICIT or TEMPLATE).')
-      return
-    }
-
-    setSavingExpectedDocker(true)
-    setExpectedDockerError(null)
-    const controller = new AbortController()
-    replaceDockerExpectedServicesSpecs(
-      environmentId,
-      {
-        specs: specs.map((s) =>
-          s.mode === 'TEMPLATE'
-            ? { ...s, items: [] }
-            : s,
-        ),
-      },
-      controller.signal,
-    )
-      .then(() => refresh())
-      .catch((e) => setExpectedDockerError(e instanceof Error ? e.message : 'Request failed'))
-      .finally(() => setSavingExpectedDocker(false))
-  }
-
   const isAdmin = auth.kind === 'ready' && auth.me.roles.includes('ADMIN')
+
+  useEffect(() => {
+    if (!isAdmin) return
+    if (view !== 'overview') return
+    const controller = new AbortController()
+    setCloneSources(null)
+    setCloneError(null)
+    fetchAdminEnvironments(controller.signal)
+      .then((envs) => {
+        const sources = envs.filter((e) => e.id !== environmentId)
+        setCloneSources(sources)
+        if (!cloneSourceId && sources.length > 0) setCloneSourceId(sources[0].id)
+      })
+      .catch((e) => setCloneError(e instanceof Error ? e.message : 'Request failed'))
+    return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, view, environmentId])
 
   const beginEnvRename = () => {
     if (state.kind !== 'ready') return
@@ -494,6 +431,82 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
               Error: {envNameError}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {state.kind === 'ready' && view === 'overview' && isAdmin ? (
+        <div className="card" style={{ marginTop: 12, padding: 12 }}>
+          <div className="h2" style={{ margin: 0 }}>
+            Clone config
+          </div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            Copies Servers + targets + expected-set specs from another environment into this one. Templates are global and are reused. User visibility and scan state are not copied.
+          </div>
+
+          {cloneError ? (
+            <div className="muted" style={{ marginTop: 8 }}>
+              Error: {cloneError}
+            </div>
+          ) : null}
+
+          {(() => {
+            const empty = state.servers.length === 0 && state.targets.length === 0 && state.actuatorTargets.length === 0
+            const sources = cloneSources ?? []
+            return (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'end', marginTop: 10, maxWidth: 900 }}>
+                <label className="field" style={{ flex: 1 }}>
+                  <div className="fieldLabel">Source environment</div>
+                  <select
+                    className="fieldInput"
+                    value={cloneSourceId}
+                    onChange={(e) => setCloneSourceId(e.target.value)}
+                    disabled={!empty || cloning || cloneSources == null || sources.length === 0}
+                    aria-label="Source environment for cloning"
+                  >
+                    {cloneSources == null ? <option value="">Loading…</option> : null}
+                    {cloneSources != null && sources.length === 0 ? <option value="">No other environments</option> : null}
+                    {sources.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={!empty || cloning || !cloneSourceId}
+                  onClick={() => {
+                    if (!empty) {
+                      setCloneError('Target environment must be empty to clone config.')
+                      return
+                    }
+                    if (!cloneSourceId) {
+                      setCloneError('Pick a source environment.')
+                      return
+                    }
+                    const srcName = sources.find((e) => e.id === cloneSourceId)?.name ?? cloneSourceId
+                    if (!window.confirm(`Clone config from '${srcName}' into '${state.status.environmentName}'?\n\nThis will create servers and targets.`)) return
+                    setCloning(true)
+                    setCloneError(null)
+                    const controller = new AbortController()
+                    cloneAdminEnvironmentConfig(environmentId, { sourceEnvironmentId: cloneSourceId }, controller.signal)
+                      .then((r) => {
+                        window.alert(
+                          `Cloned: ${r.servers} servers, ${r.tomcatTargets} tomcat targets, ${r.actuatorTargets} microservices, ${r.tomcatExpectedSpecs} tomcat expected specs, ${r.dockerExpectedSpecs} docker expected specs.`,
+                        )
+                        return refresh(controller.signal)
+                      })
+                      .catch((e) => setCloneError(e instanceof Error ? e.message : 'Request failed'))
+                      .finally(() => setCloning(false))
+                  }}
+                >
+                  {cloning ? 'Cloning…' : 'Clone'}
+                </button>
+                {!empty ? <div className="muted">This environment is not empty.</div> : null}
+              </div>
+            )
+          })()}
         </div>
       ) : null}
 
