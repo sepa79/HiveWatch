@@ -5,12 +5,14 @@ import {
   createServer,
   createTomcatTarget,
   fetchActuatorTargets,
+  fetchEnvironmentStatus,
   fetchServers,
   fetchTomcatTargets,
   scanEnvironmentActuators,
   scanEnvironmentTomcats,
   type ActuatorTarget,
   type ActuatorTargetCreateRequest,
+  type EnvironmentStatus,
   type Server,
   type ServerCreateRequest,
   type TomcatTarget,
@@ -20,7 +22,7 @@ import {
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; servers: Server[]; targets: TomcatTarget[]; actuatorTargets: ActuatorTarget[] }
+  | { kind: 'ready'; servers: Server[]; targets: TomcatTarget[]; actuatorTargets: ActuatorTarget[]; status: EnvironmentStatus }
   | { kind: 'error'; message: string }
 
 export function EnvironmentDetailPage() {
@@ -61,8 +63,9 @@ export function EnvironmentDetailPage() {
       fetchServers(environmentId, signal),
       fetchTomcatTargets(environmentId, signal),
       fetchActuatorTargets(environmentId, signal),
+      fetchEnvironmentStatus(environmentId, signal),
     ])
-      .then(([servers, targets, actuatorTargets]) => setState({ kind: 'ready', servers, targets, actuatorTargets }))
+      .then(([servers, targets, actuatorTargets, status]) => setState({ kind: 'ready', servers, targets, actuatorTargets, status }))
       .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
 
   useEffect(() => {
@@ -110,6 +113,19 @@ export function EnvironmentDetailPage() {
     return <div className="pill" data-kind="alert">ERROR</div>
   }
 
+  const decisionPill = (status: EnvironmentStatus) => {
+    switch (status.verdict) {
+      case 'OK':
+        return <div className="pill" data-kind="ok">OK</div>
+      case 'WARN':
+        return <div className="pill" data-kind="warn">WARN</div>
+      case 'BLOCK':
+        return <div className="pill" data-kind="alert">BLOCK</div>
+      default:
+        return <div className="pill" data-kind="missing">UNKNOWN</div>
+    }
+  }
+
   const roleLabel = (role: TomcatRole) => {
     const labels: Record<TomcatRole, string> = {
       PAYMENTS: 'payments',
@@ -149,6 +165,36 @@ export function EnvironmentDetailPage() {
       </div>
 
       <div className="card" style={{ marginTop: 12 }}>
+        {state.kind === 'ready' ? (
+          <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontWeight: 900 }}>Decision</div>
+              {decisionPill(state.status)}
+              <div className="muted" style={{ marginLeft: 'auto' }}>
+                evaluated: {formatTs(state.status.evaluatedAt)}
+              </div>
+            </div>
+            {state.status.issues.length > 0 ? (
+              <div className="kv" style={{ marginTop: 10 }}>
+                {state.status.issues.slice(0, 10).map((i) => (
+                  <div key={i.targetId + i.label} style={{ display: 'contents' }}>
+                    <div className="k">
+                      {i.serverName} · {i.label}
+                    </div>
+                    <div className="v">
+                      <span className="muted">{i.severity}</span> · {i.message}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="muted" style={{ marginTop: 10 }}>
+                No issues.
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <div className="h2">Topology: Environment → Server → Tomcats</div>
         <div className="muted" style={{ marginTop: 6 }}>
           Every Tomcat target is explicitly assigned to a Server and Role (<code>payments</code>/<code>services</code>/<code>auth</code>). Scanner hits{' '}

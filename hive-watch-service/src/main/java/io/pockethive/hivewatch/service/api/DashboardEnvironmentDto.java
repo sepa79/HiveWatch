@@ -17,6 +17,10 @@ public record DashboardEnvironmentDto(
         int actuatorDown,
         int actuatorError,
         Instant actuatorLastScanAt,
-        TomcatEnvironmentStatus actuatorStatus
+        TomcatEnvironmentStatus actuatorStatus,
+        DecisionVerdict decisionVerdict,
+        int decisionBlockIssues,
+        int decisionWarnIssues,
+        int decisionUnknownIssues
 ) {
 }

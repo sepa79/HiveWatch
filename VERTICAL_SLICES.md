@@ -23,9 +23,9 @@ Dev note (for now): schema is treated as rewriteable; `./build-hive-watch.sh --d
 - [x] UI: show microservices separately + aggregated status
 
 ## Slice 4 — Decision engine (OK/WARN/BLOCK) + snapshot
-- [ ] Policy engine: weighted rules + unit tests
-- [ ] Snapshot DTO: compact failure snapshot for PocketHive Pull API
-- [ ] Dashboard uses Decision (not “reachable”)
+- [x] Policy engine: weighted rules + unit tests
+- [x] Snapshot DTO: compact failure snapshot for PocketHive Pull API
+- [x] Dashboard uses Decision (not “reachable”)
 
 ## Slice 5 — User visibility + admin config
 - [ ] Auth: OIDC/JWT skeleton (server-side enforcement)

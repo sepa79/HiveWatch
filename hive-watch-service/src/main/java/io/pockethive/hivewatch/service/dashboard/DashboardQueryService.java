@@ -6,6 +6,9 @@ import io.pockethive.hivewatch.service.actuator.ActuatorTargetEntity;
 import io.pockethive.hivewatch.service.actuator.ActuatorTargetRepository;
 import io.pockethive.hivewatch.service.actuator.ActuatorTargetScanStateEntity;
 import io.pockethive.hivewatch.service.actuator.ActuatorTargetScanStateRepository;
+import io.pockethive.hivewatch.service.decision.DecisionEngine;
+import io.pockethive.hivewatch.service.decision.DecisionEvaluation;
+import io.pockethive.hivewatch.service.decision.DecisionInputs;
 import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
@@ -34,6 +37,7 @@ public class DashboardQueryService {
     private final TomcatTargetScanStateRepository tomcatTargetScanStateRepository;
     private final ActuatorTargetRepository actuatorTargetRepository;
     private final ActuatorTargetScanStateRepository actuatorTargetScanStateRepository;
+    private final DecisionEngine decisionEngine;
 
     public DashboardQueryService(
             EnvironmentRepository environmentRepository,
@@ -41,7 +45,8 @@ public class DashboardQueryService {
             TomcatTargetRepository tomcatTargetRepository,
             TomcatTargetScanStateRepository tomcatTargetScanStateRepository,
             ActuatorTargetRepository actuatorTargetRepository,
-            ActuatorTargetScanStateRepository actuatorTargetScanStateRepository
+            ActuatorTargetScanStateRepository actuatorTargetScanStateRepository,
+            DecisionEngine decisionEngine
     ) {
         this.environmentRepository = environmentRepository;
         this.serverRepository = serverRepository;
@@ -49,12 +54,15 @@ public class DashboardQueryService {
         this.tomcatTargetScanStateRepository = tomcatTargetScanStateRepository;
         this.actuatorTargetRepository = actuatorTargetRepository;
         this.actuatorTargetScanStateRepository = actuatorTargetScanStateRepository;
+        this.decisionEngine = decisionEngine;
     }
 
     @Transactional(readOnly = true)
     public List<DashboardEnvironmentDto> listEnvironments() {
         List<EnvironmentEntity> environments = environmentRepository.findAll(Sort.by(Sort.Direction.ASC, "name"));
         List<ServerEntity> servers = serverRepository.findAll();
+        Map<UUID, ServerEntity> serverById = servers.stream()
+                .collect(java.util.stream.Collectors.toMap(ServerEntity::getId, Function.identity()));
         List<TomcatTargetEntity> targets = tomcatTargetRepository.findAll();
         List<ActuatorTargetEntity> actuatorTargets = actuatorTargetRepository.findAll();
 
@@ -148,6 +156,51 @@ public class DashboardQueryService {
             }
             TomcatEnvironmentStatus actuatorStatus = computeActuatorStatus(aTotal, aUp, aDown, aErr);
 
+            List<DecisionInputs.TomcatTargetObservation> tomcatObs = envTargets.stream().map(t -> {
+                ServerEntity s = serverById.get(t.getServerId());
+                if (s == null) {
+                    throw new IllegalStateException("Server not found for tomcat target: " + t.getId());
+                }
+                TomcatTargetScanStateEntity st = stateByTargetId.get(t.getId());
+                return new DecisionInputs.TomcatTargetObservation(
+                        t.getId(),
+                        s.getName(),
+                        t.getRole(),
+                        t.getBaseUrl(),
+                        t.getPort(),
+                        st == null ? null : st.getScannedAt(),
+                        st == null ? null : st.getOutcomeKind(),
+                        st == null ? null : st.getErrorKind(),
+                        st == null ? null : st.getErrorMessage()
+                );
+            }).toList();
+
+            List<DecisionInputs.ActuatorTargetObservation> actuatorObs = envActuatorTargets.stream().map(t -> {
+                ServerEntity s = serverById.get(t.getServerId());
+                if (s == null) {
+                    throw new IllegalStateException("Server not found for actuator target: " + t.getId());
+                }
+                ActuatorTargetScanStateEntity st = actuatorStateByTargetId.get(t.getId());
+                return new DecisionInputs.ActuatorTargetObservation(
+                        t.getId(),
+                        s.getName(),
+                        t.getRole(),
+                        t.getBaseUrl(),
+                        t.getPort(),
+                        t.getProfile(),
+                        st == null ? null : st.getScannedAt(),
+                        st == null ? null : st.getOutcomeKind(),
+                        st == null ? null : st.getErrorKind(),
+                        st == null ? null : st.getErrorMessage(),
+                        st == null ? null : st.getHealthStatus(),
+                        st == null ? null : st.getAppName(),
+                        st == null ? null : st.getCpuUsage(),
+                        st == null ? null : st.getMemoryUsedBytes()
+                );
+            }).toList();
+
+            DecisionEvaluation decision = decisionEngine.evaluate(tomcatObs, actuatorObs);
+
             dtos.add(new DashboardEnvironmentDto(
                     env.getId(),
                     env.getName(),
@@ -162,7 +215,11 @@ public class DashboardQueryService {
                     aDown,
                     aErr,
                     aLastScanAt,
-                    actuatorStatus
+                    actuatorStatus,
+                    decision.verdict(),
+                    decision.blockIssues(),
+                    decision.warnIssues(),
+                    decision.unknownIssues()
             ));
         }
 

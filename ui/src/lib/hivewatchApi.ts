@@ -4,6 +4,7 @@ export type EnvironmentSummary = {
 }
 
 export type TomcatEnvironmentStatus = 'UNKNOWN' | 'OK' | 'BLOCK'
+export type DecisionVerdict = 'OK' | 'WARN' | 'BLOCK' | 'UNKNOWN'
 
 export type DashboardEnvironment = {
   id: string
@@ -20,6 +21,10 @@ export type DashboardEnvironment = {
   actuatorError: number
   actuatorLastScanAt: string | null
   actuatorStatus: TomcatEnvironmentStatus
+  decisionVerdict: DecisionVerdict
+  decisionBlockIssues: number
+  decisionWarnIssues: number
+  decisionUnknownIssues: number
 }
 
 export type TomcatScanOutcomeKind = 'SUCCESS' | 'ERROR'
@@ -105,6 +110,24 @@ export type UserSummary = {
   active: boolean
 }
 
+export type DecisionIssue = {
+  severity: DecisionVerdict
+  kind: 'TOMCAT_TARGET' | 'ACTUATOR_TARGET'
+  targetId: string
+  serverName: string
+  role: TomcatRole
+  label: string
+  message: string
+}
+
+export type EnvironmentStatus = {
+  environmentId: string
+  environmentName: string
+  verdict: DecisionVerdict
+  evaluatedAt: string
+  issues: DecisionIssue[]
+}
+
 async function readJsonOrThrow<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
@@ -140,6 +163,11 @@ export async function fetchTomcatTargets(environmentId: string, signal?: AbortSi
 export async function fetchServers(environmentId: string, signal?: AbortSignal): Promise<Server[]> {
   const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/servers`, { signal })
   return readJsonOrThrow<Server[]>(response)
+}
+
+export async function fetchEnvironmentStatus(environmentId: string, signal?: AbortSignal): Promise<EnvironmentStatus> {
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/status`, { signal })
+  return readJsonOrThrow<EnvironmentStatus>(response)
 }
 
 export async function createServer(

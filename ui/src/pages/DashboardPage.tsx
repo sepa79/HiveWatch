@@ -59,12 +59,20 @@ export function DashboardPage() {
     return date.toLocaleString()
   }
 
-  const pill = (label: string, status: DashboardEnvironment['tomcatStatus']) => {
+  type PillStatus = 'OK' | 'WARN' | 'BLOCK' | 'UNKNOWN'
+
+  const pill = (label: string, status: PillStatus) => {
     switch (status) {
       case 'OK':
         return (
           <div className="pill" data-kind="ok">
             {label} OK
+          </div>
+        )
+      case 'WARN':
+        return (
+          <div className="pill" data-kind="warn">
+            {label} WARN
           </div>
         )
       case 'BLOCK':
@@ -147,6 +155,7 @@ export function DashboardPage() {
                       {env.name}
                     </Link>
                   </div>
+                  {pill('D', env.decisionVerdict)}
                   {pill('T', env.tomcatStatus)}
                   {pill('MS', env.actuatorStatus)}
 
@@ -202,6 +211,10 @@ export function DashboardPage() {
                   <div className="k">up / down / err</div>
                   <div className="v">
                     {env.actuatorUp} / {env.actuatorDown} / {env.actuatorError}
+                  </div>
+                  <div className="k">decision issues</div>
+                  <div className="v">
+                    {env.decisionBlockIssues} block · {env.decisionWarnIssues} warn · {env.decisionUnknownIssues} unknown
                   </div>
                 </div>
 
