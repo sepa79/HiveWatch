@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: hivewatch-postgres
+    environment:
+      POSTGRES_DB: hive_watch
+      POSTGRES_USER: hive_watch
+      POSTGRES_PASSWORD: hive_watch
+    volumes:
+      - hivewatch-postgres-data:/var/lib/postgresql/data
+    networks:
+      - hivewatch-dev
+
+  hive-watch-service:
+    image: hive-watch-service:latest
+    container_name: hive-watch-service
+    build:
+      context: .
+      dockerfile: hive-watch-service/Dockerfile.runtime
+    depends_on:
+      - postgres
+    ports:
+      - "${HW_HTTP_PORT:-18180}:8080"
+    environment:
+      HW_DB_URL: jdbc:postgresql://postgres:5432/hive_watch
+      HW_DB_USER: hive_watch
+      HW_DB_PASSWORD: hive_watch
+    networks:
+      - hivewatch-dev
+
+volumes:
+  hivewatch-postgres-data:
+
+networks:
+  hivewatch-dev:
+    name: hivewatch-dev
+    external: true

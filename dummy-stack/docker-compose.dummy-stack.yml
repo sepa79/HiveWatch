@@ -1,0 +1,116 @@
+services:
+  nft-01-touchpoint-tomcats:
+    build:
+      context: .
+      dockerfile: tomcat-multi/Dockerfile
+    container_name: hc-dummy-nft-01-touchpoint-tomcats
+    environment:
+      TOMCAT_INSTANCES: payments,services,auth
+      TOMCAT_SERVER_LABEL: "NFT-01 / Touchpoint"
+      WEBAPPS_PAYMENTS: "PaymentApp1,PaymentApp2,SharedPaymentsApp"
+      WEBAPPS_SERVICES: "ServicesApp1,TouchpointGateway,SharedServicesApp"
+      WEBAPPS_AUTH: "AuthApp1,SSOConsole,SharedAuthApp"
+    ports:
+      - "19111:8081" # payments
+      - "19112:8082" # services
+      - "19113:8083" # auth
+    networks:
+      - hivewatch-dev
+
+  nft-01-services-tomcats:
+    build:
+      context: .
+      dockerfile: tomcat-multi/Dockerfile
+    container_name: hc-dummy-nft-01-services-tomcats
+    environment:
+      TOMCAT_INSTANCES: payments,services,auth
+      TOMCAT_SERVER_LABEL: "NFT-01 / Services"
+      WEBAPPS_PAYMENTS: "PaymentApp2,PaymentApp3,SharedPaymentsApp"
+      WEBAPPS_SERVICES: "ServicesApp1,ServicesApp2,SharedServicesApp"
+      WEBAPPS_AUTH: "AuthApp1,AuthApp2,SharedAuthApp"
+    ports:
+      - "19114:8081" # payments
+      - "19115:8082" # services
+      - "19116:8083" # auth
+    networks:
+      - hivewatch-dev
+
+  nft-01-docker-swarm-microservices:
+    build:
+      context: .
+      dockerfile: actuator-multi/Dockerfile
+    container_name: hc-dummy-nft-01-docker-swarm-microservices
+    environment:
+      ACTUATOR_ENVIRONMENT_NAME: NFT-01
+      ACTUATOR_PROFILES_JSON: '{"payments":{"app_name":"payments-service","health_status":"UP","cpu_usage":0.18,"memory_used_bytes":402653184},"services":{"app_name":"services-service","health_status":"UP","cpu_usage":0.31,"memory_used_bytes":603979776},"auth":{"app_name":"auth-service","health_status":"UP","cpu_usage":0.27,"memory_used_bytes":469762048}}'
+    ports:
+      - "19121:8080"
+    networks:
+      - hivewatch-dev
+
+  nft-02-all-in-one-tomcats:
+    build:
+      context: .
+      dockerfile: tomcat-multi/Dockerfile
+    container_name: hc-dummy-nft-02-all-in-one-tomcats
+    environment:
+      TOMCAT_INSTANCES: payments,services,auth
+      TOMCAT_SERVER_LABEL: "NFT-02 / All-in-one"
+      WEBAPPS_PAYMENTS: "PaymentApp1,PaymentApp2,PaymentApp3,SharedPaymentsApp"
+      WEBAPPS_SERVICES: "ServicesApp1,ServicesApp2,TouchpointGateway,SharedServicesApp"
+      WEBAPPS_AUTH: "AuthApp1,AuthApp2,SSOConsole,SharedAuthApp"
+    ports:
+      - "19211:8081" # payments
+      - "19212:8082" # services
+      - "19213:8083" # auth
+    networks:
+      - hivewatch-dev
+
+  nft-02-docker-swarm-microservices:
+    build:
+      context: .
+      dockerfile: actuator-multi/Dockerfile
+    container_name: hc-dummy-nft-02-docker-swarm-microservices
+    environment:
+      ACTUATOR_ENVIRONMENT_NAME: NFT-02
+      ACTUATOR_PROFILES_JSON: '{"payments":{"app_name":"payments-service","health_status":"UP","cpu_usage":0.12,"memory_used_bytes":318767104},"services":{"app_name":"services-service","health_status":"UP","cpu_usage":0.22,"memory_used_bytes":469762048},"auth":{"app_name":"auth-service","health_status":"UP","cpu_usage":0.15,"memory_used_bytes":402653184}}'
+    ports:
+      - "19221:8080"
+    networks:
+      - hivewatch-dev
+
+  release-01-all-in-one-tomcats:
+    build:
+      context: .
+      dockerfile: tomcat-multi/Dockerfile
+    container_name: hc-dummy-release-01-all-in-one-tomcats
+    environment:
+      TOMCAT_INSTANCES: payments,services,auth
+      TOMCAT_SERVER_LABEL: "Release-01 / All-in-one"
+      WEBAPPS_PAYMENTS: "PaymentApp1,PaymentApp2,PaymentApp3,SharedPaymentsApp"
+      WEBAPPS_SERVICES: "ServicesApp1,ServicesApp2,TouchpointGateway,SharedServicesApp"
+      WEBAPPS_AUTH: "AuthApp1,AuthApp2,SSOConsole,SharedAuthApp"
+    ports:
+      - "19311:8081" # payments
+      - "19312:8082" # services
+      - "19313:8083" # auth
+    networks:
+      - hivewatch-dev
+
+  release-01-docker-swarm-microservices:
+    build:
+      context: .
+      dockerfile: actuator-multi/Dockerfile
+    container_name: hc-dummy-release-01-docker-swarm-microservices
+    environment:
+      ACTUATOR_ENVIRONMENT_NAME: Release-01
+      ACTUATOR_PROFILES_JSON: '{"payments":{"app_name":"payments-service","health_status":"UP","cpu_usage":0.19,"memory_used_bytes":385875968},"services":{"app_name":"services-service","health_status":"UP","cpu_usage":0.28,"memory_used_bytes":503316480},"auth":{"app_name":"auth-service","health_status":"UP","cpu_usage":0.17,"memory_used_bytes":419430400}}'
+    ports:
+      - "19321:8080"
+    networks:
+      - hivewatch-dev
+
+networks:
+  hivewatch-dev:
+    name: hivewatch-dev
+    external: true

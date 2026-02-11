@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.cache
+
+**/target/*
+!hive-watch-service/target/
+!hive-watch-service/target/hive-watch-service-*.jar
+**/*.log
+
+.git
+.idea
+.vscode

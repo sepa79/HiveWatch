@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 280" width="900" height="280">
+  <style>
+    /* Mark */
+    .hex { fill:none; stroke:#FFC107; stroke-width:14; stroke-linejoin:round; }
+    .eye { fill:none; stroke:#ffffff; stroke-width:12; stroke-linecap:round; stroke-linejoin:round; }
+    .lensOuter { fill:#222; stroke:#999; stroke-width:3; }
+    .lensInner { fill:url(#grad); }
+
+    /* Typography (match PocketHive) */
+    .brand { font:800 76px 'Inter','Segoe UI',Arial,sans-serif; }
+    .brandHive { fill:#FFC107; }
+    .brandWatch { fill:#ffffff; }
+
+    .tagline { font:500 26px 'Inter','Segoe UI',Arial,sans-serif; fill:#999; }
+
+    /* same subtle shadow for readability */
+    .shadow { filter:url(#textShadow); }
+  </style>
+
+  <defs>
+    <!-- EXACT same HAL lens gradient as PocketHive -->
+    <radialGradient id="grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#FF3C2E"/>
+      <stop offset="40%" stop-color="#B20E00"/>
+      <stop offset="100%" stop-color="#400000"/>
+    </radialGradient>
+
+    <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- === MARK === -->
+  <g transform="translate(0,30)">
+    <!-- hex -->
+    <path class="hex" d="M110 20 190 65v90l-80 45-80-45V65z"/>
+    <!-- eye -->
+    <path class="eye" d="M62 110c12-19 29-31 48-31s36 12 48 31c-12 19-29 31-48 31s-36-12-48-31z"/>
+    <!-- HAL pupil -->
+    <circle class="lensOuter" cx="110" cy="110" r="20"/>
+    <circle class="lensInner" cx="110" cy="110" r="14"/>
+  </g>
+
+  <!-- === TEXT === -->
+  <g transform="translate(260,148)" class="shadow">
+    <!-- HiveWatch without space, single textLength to avoid drift -->
+    <text class="brand" x="0" y="0" textLength="460" lengthAdjust="spacingAndGlyphs">
+      <tspan class="brandHive">Hive</tspan><tspan class="brandWatch">Watch</tspan>
+    </text>
+
+    <!-- Tagline spanning exactly the brand width -->
+    <text class="tagline" x="0" y="34" textLength="460" lengthAdjust="spacingAndGlyphs">
+      environment monitor
+    </text>
+  </g>
+</svg>

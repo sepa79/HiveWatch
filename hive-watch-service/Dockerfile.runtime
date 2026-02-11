@@ -1,0 +1,17 @@
+FROM node:20-alpine AS ui-builder
+
+WORKDIR /ui
+COPY ui/package*.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
+
+FROM eclipse-temurin:21-jre
+
+WORKDIR /app
+COPY hive-watch-service/target/hive-watch-service-*.jar app.jar
+COPY --from=ui-builder /ui/dist /app/ui
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+
