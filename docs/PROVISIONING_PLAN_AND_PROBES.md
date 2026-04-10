@@ -358,6 +358,25 @@ When config revisioning is implemented, `apply` should create the revision recor
 
 ## 9. Implementation Slices
 
+Tracking:
+
+- [x] Slice 1: Dev-MCP (`f79110a`)
+- [x] Slice 2: Probe API (`c79c28c`)
+- [x] Slice 3: Provisioning Plan Validation (`0650c5d`)
+- [x] Slice 4: Provisioning Plan Apply (`70b7d8b`, `8dd2932`)
+- [x] Slice 5: UI Probe Button (`28da5e3`)
+- [x] Slice 6: UI Provisioning Wizard (`cd7c516`)
+- [x] Slice 7: Production MCP (`2ca5b5b`)
+- [x] Slice 8: Audit and Config Revisioning (`86576a4`)
+
+Remaining follow-ups:
+
+- [ ] Add `scanAfterApply` support behind the apply API.
+- [ ] Extend the UI provisioning wizard beyond the first narrow flow: existing environments, existing servers, multiple servers, multiple roles, Docker expected services, and templates.
+- [ ] Add audit/config revision read APIs for UI inspection and operational review.
+- [ ] Add rollback workflow once revision restore semantics are explicitly designed.
+- [ ] Replace direct secret values in provisioning plans with secret references.
+
 ### Slice 1: Dev-MCP
 
 - Add a local dev-MCP server or scriptable MCP tools for developers.
