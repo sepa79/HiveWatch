@@ -21,6 +21,7 @@ import io.pockethive.hivewatch.service.api.ProvisioningTomcatExpectedWebappsSpec
 import io.pockethive.hivewatch.service.api.ProvisioningTomcatTargetDto;
 import io.pockethive.hivewatch.service.api.TomcatExpectedWebappsSpecDto;
 import io.pockethive.hivewatch.service.api.TomcatExpectedWebappsSpecReplaceRequestDto;
+import io.pockethive.hivewatch.service.audit.ConfigAuditService;
 import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
@@ -51,6 +52,7 @@ public class ProvisioningPlanApplyService {
     private final ActuatorTargetRepository actuatorTargetRepository;
     private final TomcatExpectedWebappsSpecService tomcatExpectedWebappsSpecService;
     private final DockerExpectedServicesSpecService dockerExpectedServicesSpecService;
+    private final ConfigAuditService configAuditService;
 
     public ProvisioningPlanApplyService(
             ProvisioningPlanValidationService validationService,
@@ -59,7 +61,8 @@ public class ProvisioningPlanApplyService {
             TomcatTargetRepository tomcatTargetRepository,
             ActuatorTargetRepository actuatorTargetRepository,
             TomcatExpectedWebappsSpecService tomcatExpectedWebappsSpecService,
-            DockerExpectedServicesSpecService dockerExpectedServicesSpecService
+            DockerExpectedServicesSpecService dockerExpectedServicesSpecService,
+            ConfigAuditService configAuditService
     ) {
         this.validationService = validationService;
         this.environmentRepository = environmentRepository;
@@ -68,6 +71,7 @@ public class ProvisioningPlanApplyService {
         this.actuatorTargetRepository = actuatorTargetRepository;
         this.tomcatExpectedWebappsSpecService = tomcatExpectedWebappsSpecService;
         this.dockerExpectedServicesSpecService = dockerExpectedServicesSpecService;
+        this.configAuditService = configAuditService;
     }
 
     @Transactional
@@ -100,18 +104,21 @@ public class ProvisioningPlanApplyService {
             applyDockerExpectedServices(environment.getId(), savedServer.getId(), server, objects, counter);
         }
 
+        ProvisioningApplySummaryDto summary = new ProvisioningApplySummaryDto(
+                counter.environmentsCreated,
+                counter.serversCreated,
+                counter.tomcatTargetsCreated,
+                counter.actuatorTargetsCreated,
+                counter.tomcatExpectedWebappSpecsApplied,
+                counter.tomcatExpectedWebappItemsApplied,
+                counter.dockerExpectedServiceSpecsApplied,
+                counter.dockerExpectedServiceItemsApplied
+        );
+        configAuditService.recordProvisioningApply(environment.getId(), request.plan(), summary, List.copyOf(objects));
+
         return new ProvisioningPlanApplyResultDto(
                 environment.getId(),
-                new ProvisioningApplySummaryDto(
-                        counter.environmentsCreated,
-                        counter.serversCreated,
-                        counter.tomcatTargetsCreated,
-                        counter.actuatorTargetsCreated,
-                        counter.tomcatExpectedWebappSpecsApplied,
-                        counter.tomcatExpectedWebappItemsApplied,
-                        counter.dockerExpectedServiceSpecsApplied,
-                        counter.dockerExpectedServiceItemsApplied
-                ),
+                summary,
                 List.copyOf(objects),
                 validation
         );

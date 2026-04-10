@@ -418,6 +418,7 @@ When config revisioning is implemented, `apply` should create the revision recor
 - Wire apply through revision creation.
 - Preserve the public provisioning API contract.
 - Ensure MCP and UI automatically benefit from revisioning by continuing to call apply.
+- Initial implementation stores redacted provisioning plan JSON, summary JSON, plan hash, actor, source, correlation ID, reason, and object-level audit events.
 
 ## 10. Test Plan
 

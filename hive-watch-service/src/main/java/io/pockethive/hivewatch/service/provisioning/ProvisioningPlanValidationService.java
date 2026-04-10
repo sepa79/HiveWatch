@@ -81,6 +81,9 @@ public class ProvisioningPlanValidationService {
         List<ProvisioningPlanIssueDto> warnings = new ArrayList<>();
         List<ProvisioningPlanDiffDto> diff = new ArrayList<>();
 
+        if (trimmed(plan.source()) == null) {
+            error(errors, "/source", "source is required");
+        }
         Optional<EnvironmentEntity> existingEnvironment = validateEnvironment(plan.environment(), errors, diff);
         validateServers(plan, existingEnvironment.map(EnvironmentEntity::getId).orElse(null), errors, warnings, diff);
 

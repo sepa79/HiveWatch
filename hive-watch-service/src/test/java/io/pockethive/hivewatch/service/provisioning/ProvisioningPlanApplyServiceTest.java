@@ -21,6 +21,7 @@ import io.pockethive.hivewatch.service.api.ProvisioningTomcatTargetDto;
 import io.pockethive.hivewatch.service.api.TargetAdapterTypeDto;
 import io.pockethive.hivewatch.service.api.TomcatExpectedWebappsSpecReplaceRequestDto;
 import io.pockethive.hivewatch.service.api.TomcatRole;
+import io.pockethive.hivewatch.service.audit.ConfigAuditService;
 import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
@@ -50,6 +51,7 @@ class ProvisioningPlanApplyServiceTest {
     private final ActuatorTargetRepository actuatorTargetRepository = mock(ActuatorTargetRepository.class);
     private final TomcatExpectedWebappsSpecService tomcatExpectedWebappsSpecService = mock(TomcatExpectedWebappsSpecService.class);
     private final DockerExpectedServicesSpecService dockerExpectedServicesSpecService = mock(DockerExpectedServicesSpecService.class);
+    private final ConfigAuditService configAuditService = mock(ConfigAuditService.class);
 
     private final ProvisioningPlanApplyService service = new ProvisioningPlanApplyService(
             validationService,
@@ -58,7 +60,8 @@ class ProvisioningPlanApplyServiceTest {
             tomcatTargetRepository,
             actuatorTargetRepository,
             tomcatExpectedWebappsSpecService,
-            dockerExpectedServicesSpecService
+            dockerExpectedServicesSpecService,
+            configAuditService
     );
 
     @Test
@@ -100,6 +103,7 @@ class ProvisioningPlanApplyServiceTest {
         assertThat(expectedCaptor.getValue().specs()).hasSize(1);
         assertThat(expectedCaptor.getValue().specs().getFirst().serverId()).isNotNull();
         assertThat(expectedCaptor.getValue().specs().getFirst().items()).containsExactly("/payments", "/payments-admin");
+        verify(configAuditService).recordProvisioningApply(any(), any(), any(), any());
     }
 
     @Test
@@ -120,6 +124,7 @@ class ProvisioningPlanApplyServiceTest {
         verify(serverRepository, never()).save(any());
         verify(tomcatTargetRepository, never()).save(any());
         verify(actuatorTargetRepository, never()).save(any());
+        verify(configAuditService, never()).recordProvisioningApply(any(), any(), any(), any());
     }
 
     @Test
