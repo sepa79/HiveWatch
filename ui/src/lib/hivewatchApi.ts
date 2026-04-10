@@ -71,6 +71,7 @@ export type Dashboard = {
 export type TomcatScanOutcomeKind = 'SUCCESS' | 'ERROR'
 export type TomcatScanErrorKind = 'AUTH' | 'CONNECTIVITY' | 'TIMEOUT' | 'HTTP' | 'PARSE' | 'UNKNOWN'
 export type TomcatRole = 'PAYMENTS' | 'SERVICES' | 'AUTH'
+export type TargetAdapterType = 'TOMCAT_MANAGER_HTML' | 'ACTUATOR_HTTP'
 
 export type TomcatTargetState = {
   scannedAt: string
@@ -186,6 +187,46 @@ export type ActuatorTargetCreateRequest = {
   profile: string
   connectTimeoutMs: number
   requestTimeoutMs: number
+}
+
+export type TargetProbeRequest = {
+  adapterType: TargetAdapterType
+  baseUrl: string
+  port: number
+  username: string | null
+  password: string | null
+  profile: string | null
+  connectTimeoutMs: number
+  requestTimeoutMs: number
+}
+
+export type TomcatManagerHtmlProbeObserved = {
+  adapterType: 'TOMCAT_MANAGER_HTML'
+  tomcatVersion: string | null
+  javaVersion: string | null
+  os: string | null
+  webapps: TomcatWebapp[]
+}
+
+export type ActuatorHttpProbeObserved = {
+  adapterType: 'ACTUATOR_HTTP'
+  healthStatus: string | null
+  appName: string | null
+  buildVersion: string | null
+  cpuUsage: number | null
+  memoryUsedBytes: number | null
+}
+
+export type TargetProbeResult = {
+  adapterType: TargetAdapterType
+  outcomeKind: TomcatScanOutcomeKind
+  errorKind: TomcatScanErrorKind | null
+  errorMessage: string | null
+  observed: TomcatManagerHtmlProbeObserved | ActuatorHttpProbeObserved | null
+  candidate: {
+    baseUrl: string
+    port: number
+  }
 }
 
 export type Server = {
@@ -556,6 +597,10 @@ export async function createActuatorTarget(
   signal?: AbortSignal,
 ): Promise<ActuatorTarget> {
   return postJsonOrThrow<ActuatorTarget>(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets`, request, signal)
+}
+
+export async function probeTarget(request: TargetProbeRequest, signal?: AbortSignal): Promise<TargetProbeResult> {
+  return postJsonOrThrow<TargetProbeResult>('/api/v1/admin/target-probes', request, signal)
 }
 
 export async function updateActuatorTarget(

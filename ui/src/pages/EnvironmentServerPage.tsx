@@ -12,6 +12,7 @@ import {
   fetchServerTomcatExpectedWebappsSpecs,
   fetchServers,
   fetchTomcatTargets,
+  probeTarget,
   replaceServerDockerExpectedServicesSpec,
   replaceServerTomcatExpectedWebappsSpecs,
   updateActuatorTarget,
@@ -27,6 +28,7 @@ import {
   type TomcatExpectedWebappsSpec,
   type TomcatTarget,
   type TomcatTargetCreateRequest,
+  type TargetProbeResult,
 } from '../lib/hivewatchApi'
 
 type LoadState =
@@ -57,6 +59,21 @@ function roleLabel(role: TomcatRole) {
     AUTH: 'auth',
   }
   return labels[role]
+}
+
+function probeMessage(result: TargetProbeResult): string {
+  if (result.outcomeKind === 'ERROR') {
+    return `Probe failed: ${result.errorKind ?? 'UNKNOWN'}${result.errorMessage ? ` - ${result.errorMessage}` : ''}`
+  }
+  const observed = result.observed
+  if (!observed) return 'Probe OK'
+  if (observed.adapterType === 'TOMCAT_MANAGER_HTML') {
+    const version = observed.tomcatVersion ? `, Tomcat ${observed.tomcatVersion}` : ''
+    return `Probe OK: ${observed.webapps.length} webapps${version}`
+  }
+  const app = observed.appName ? `, ${observed.appName}` : ''
+  const version = observed.buildVersion ? ` ${observed.buildVersion}` : ''
+  return `Probe OK: ${observed.healthStatus ?? 'UNKNOWN'}${app}${version}`
 }
 
 function parseLines(raw: string): string[] {
@@ -98,6 +115,10 @@ export function EnvironmentServerPage() {
 
   const [savingTomcatCreate, setSavingTomcatCreate] = useState(false)
   const [savingActuatorCreate, setSavingActuatorCreate] = useState(false)
+  const [probingTomcat, setProbingTomcat] = useState(false)
+  const [probingActuator, setProbingActuator] = useState(false)
+  const [tomcatProbeResult, setTomcatProbeResult] = useState<string | null>(null)
+  const [actuatorProbeResult, setActuatorProbeResult] = useState<string | null>(null)
 
   const [expectedTomcatDraft, setExpectedTomcatDraft] = useState<TomcatExpectedWebappsSpec[]>([])
   const [expectedDockerDraft, setExpectedDockerDraft] = useState<DockerExpectedServicesSpec | null>(null)
@@ -131,6 +152,50 @@ export function EnvironmentServerPage() {
     setTomcatForm((f) => ({ ...f, serverId }))
     setActuatorForm((f) => ({ ...f, serverId }))
   }, [serverId])
+
+  const probeTomcat = (request: TomcatTargetCreateRequest) => {
+    const controller = new AbortController()
+    setProbingTomcat(true)
+    setTomcatProbeResult(null)
+    probeTarget(
+      {
+        adapterType: 'TOMCAT_MANAGER_HTML',
+        baseUrl: request.baseUrl,
+        port: request.port,
+        username: request.username,
+        password: request.password,
+        profile: null,
+        connectTimeoutMs: request.connectTimeoutMs,
+        requestTimeoutMs: request.requestTimeoutMs,
+      },
+      controller.signal,
+    )
+      .then((result) => setTomcatProbeResult(probeMessage(result)))
+      .catch((e) => setTomcatProbeResult(`Probe failed: ${e instanceof Error ? e.message : 'Request failed'}`))
+      .finally(() => setProbingTomcat(false))
+  }
+
+  const probeActuator = (request: ActuatorTargetCreateRequest) => {
+    const controller = new AbortController()
+    setProbingActuator(true)
+    setActuatorProbeResult(null)
+    probeTarget(
+      {
+        adapterType: 'ACTUATOR_HTTP',
+        baseUrl: request.baseUrl,
+        port: request.port,
+        username: null,
+        password: null,
+        profile: request.profile,
+        connectTimeoutMs: request.connectTimeoutMs,
+        requestTimeoutMs: request.requestTimeoutMs,
+      },
+      controller.signal,
+    )
+      .then((result) => setActuatorProbeResult(probeMessage(result)))
+      .catch((e) => setActuatorProbeResult(`Probe failed: ${e instanceof Error ? e.message : 'Request failed'}`))
+      .finally(() => setProbingActuator(false))
+  }
 
   const refresh = useCallback(
     (signal?: AbortSignal) => {
@@ -722,6 +787,9 @@ export function EnvironmentServerPage() {
                   <input className="fieldInput" type="number" value={tomcatEditForm.requestTimeoutMs} onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, requestTimeoutMs: Number(e.target.value) } : f))} min={1} required />
                 </label>
                 <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
+                  <button type="button" className="button" disabled={probingTomcat || savingTomcatEdit} onClick={() => probeTomcat(tomcatEditForm)}>
+                    {probingTomcat ? 'Testing…' : 'Test endpoint'}
+                  </button>
                   <button type="submit" className="button" disabled={savingTomcatEdit}>
                     {savingTomcatEdit ? 'Saving…' : 'Save changes'}
                   </button>
@@ -729,6 +797,11 @@ export function EnvironmentServerPage() {
                     Cancel
                   </button>
                 </div>
+                {tomcatProbeResult ? (
+                  <div className="muted" role="status" style={{ gridColumn: '1 / span 2' }}>
+                    {tomcatProbeResult}
+                  </div>
+                ) : null}
               </form>
             </div>
           ) : null}
@@ -783,10 +856,18 @@ export function EnvironmentServerPage() {
                 <input className="fieldInput" type="number" value={tomcatForm.requestTimeoutMs} onChange={(e) => setTomcatForm((f) => ({ ...f, requestTimeoutMs: Number(e.target.value) }))} min={1} required />
               </label>
               <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
+                <button type="button" className="button" disabled={probingTomcat || savingTomcatCreate} onClick={() => probeTomcat(tomcatForm)}>
+                  {probingTomcat ? 'Testing…' : 'Test endpoint'}
+                </button>
                 <button type="submit" className="button" disabled={savingTomcatCreate}>
                   {savingTomcatCreate ? 'Saving…' : 'Add target'}
                 </button>
               </div>
+              {tomcatProbeResult ? (
+                <div className="muted" role="status" style={{ gridColumn: '1 / span 2' }}>
+                  {tomcatProbeResult}
+                </div>
+              ) : null}
             </form>
           </div>
         </div>
@@ -897,6 +978,9 @@ export function EnvironmentServerPage() {
                   <input className="fieldInput" type="number" value={actuatorEditForm.requestTimeoutMs} onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, requestTimeoutMs: Number(e.target.value) } : f))} min={1} required />
                 </label>
                 <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
+                  <button type="button" className="button" disabled={probingActuator || savingActuatorEdit} onClick={() => probeActuator(actuatorEditForm)}>
+                    {probingActuator ? 'Testing…' : 'Test endpoint'}
+                  </button>
                   <button type="submit" className="button" disabled={savingActuatorEdit}>
                     {savingActuatorEdit ? 'Saving…' : 'Save changes'}
                   </button>
@@ -904,6 +988,11 @@ export function EnvironmentServerPage() {
                     Cancel
                   </button>
                 </div>
+                {actuatorProbeResult ? (
+                  <div className="muted" role="status" style={{ gridColumn: '1 / span 2' }}>
+                    {actuatorProbeResult}
+                  </div>
+                ) : null}
               </form>
             </div>
           ) : null}
@@ -952,10 +1041,18 @@ export function EnvironmentServerPage() {
                 <input className="fieldInput" type="number" value={actuatorForm.requestTimeoutMs} onChange={(e) => setActuatorForm((f) => ({ ...f, requestTimeoutMs: Number(e.target.value) }))} min={1} required />
               </label>
               <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
+                <button type="button" className="button" disabled={probingActuator || savingActuatorCreate} onClick={() => probeActuator(actuatorForm)}>
+                  {probingActuator ? 'Testing…' : 'Test endpoint'}
+                </button>
                 <button type="submit" className="button" disabled={savingActuatorCreate}>
                   {savingActuatorCreate ? 'Saving…' : 'Add microservice'}
                 </button>
               </div>
+              {actuatorProbeResult ? (
+                <div className="muted" role="status" style={{ gridColumn: '1 / span 2' }}>
+                  {actuatorProbeResult}
+                </div>
+              ) : null}
             </form>
           </div>
         </div>
