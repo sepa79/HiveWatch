@@ -409,6 +409,8 @@ When config revisioning is implemented, `apply` should create the revision recor
 - Build the same canonical plan DTO as UI.
 - Use probe as an explicit endpoint check.
 - Require human approval before apply.
+- Initial script location: `tools/hivewatch-mcp/hivewatch_mcp.py`.
+- Keep DB/testbed access in `tools/dev-mcp` only.
 
 ### Slice 8: Audit and Config Revisioning
 
