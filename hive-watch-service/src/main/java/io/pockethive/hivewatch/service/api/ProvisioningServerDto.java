@@ -9,6 +9,8 @@ public record ProvisioningServerDto(
         UUID serverId,
         String name,
         List<ProvisioningTomcatTargetDto> tomcatTargets,
-        List<ProvisioningActuatorTargetDto> actuatorTargets
+        List<ProvisioningActuatorTargetDto> actuatorTargets,
+        ProvisioningTomcatExpectedWebappsDto tomcatExpectedWebapps,
+        ProvisioningDockerExpectedServicesDto dockerExpectedServices
 ) {
 }

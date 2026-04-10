@@ -3,20 +3,30 @@ package io.pockethive.hivewatch.service.provisioning;
 import io.pockethive.hivewatch.service.actuator.ActuatorTargetEntity;
 import io.pockethive.hivewatch.service.actuator.ActuatorTargetRepository;
 import io.pockethive.hivewatch.service.actuator.ActuatorTargetValidation;
+import io.pockethive.hivewatch.service.api.DockerExpectedServicesSpecDto;
+import io.pockethive.hivewatch.service.api.DockerExpectedServicesSpecReplaceRequestDto;
+import io.pockethive.hivewatch.service.api.ExpectedSetMode;
 import io.pockethive.hivewatch.service.api.ProvisioningActuatorTargetDto;
 import io.pockethive.hivewatch.service.api.ProvisioningAppliedObjectDto;
 import io.pockethive.hivewatch.service.api.ProvisioningApplySummaryDto;
 import io.pockethive.hivewatch.service.api.ProvisioningChangeModeDto;
+import io.pockethive.hivewatch.service.api.ProvisioningDockerExpectedServicesSpecDto;
+import io.pockethive.hivewatch.service.api.ProvisioningExpectedSetChangeModeDto;
 import io.pockethive.hivewatch.service.api.ProvisioningPlanApplyRequestDto;
 import io.pockethive.hivewatch.service.api.ProvisioningPlanApplyResultDto;
 import io.pockethive.hivewatch.service.api.ProvisioningPlanObjectTypeDto;
 import io.pockethive.hivewatch.service.api.ProvisioningPlanValidationResultDto;
 import io.pockethive.hivewatch.service.api.ProvisioningServerDto;
+import io.pockethive.hivewatch.service.api.ProvisioningTomcatExpectedWebappsSpecDto;
 import io.pockethive.hivewatch.service.api.ProvisioningTomcatTargetDto;
+import io.pockethive.hivewatch.service.api.TomcatExpectedWebappsSpecDto;
+import io.pockethive.hivewatch.service.api.TomcatExpectedWebappsSpecReplaceRequestDto;
 import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
+import io.pockethive.hivewatch.service.expectedsets.DockerExpectedServicesSpecService;
+import io.pockethive.hivewatch.service.expectedsets.TomcatExpectedWebappsSpecService;
 import io.pockethive.hivewatch.service.targets.TargetConnectionValidation;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetEntity;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetRepository;
@@ -39,19 +49,25 @@ public class ProvisioningPlanApplyService {
     private final ServerRepository serverRepository;
     private final TomcatTargetRepository tomcatTargetRepository;
     private final ActuatorTargetRepository actuatorTargetRepository;
+    private final TomcatExpectedWebappsSpecService tomcatExpectedWebappsSpecService;
+    private final DockerExpectedServicesSpecService dockerExpectedServicesSpecService;
 
     public ProvisioningPlanApplyService(
             ProvisioningPlanValidationService validationService,
             EnvironmentRepository environmentRepository,
             ServerRepository serverRepository,
             TomcatTargetRepository tomcatTargetRepository,
-            ActuatorTargetRepository actuatorTargetRepository
+            ActuatorTargetRepository actuatorTargetRepository,
+            TomcatExpectedWebappsSpecService tomcatExpectedWebappsSpecService,
+            DockerExpectedServicesSpecService dockerExpectedServicesSpecService
     ) {
         this.validationService = validationService;
         this.environmentRepository = environmentRepository;
         this.serverRepository = serverRepository;
         this.tomcatTargetRepository = tomcatTargetRepository;
         this.actuatorTargetRepository = actuatorTargetRepository;
+        this.tomcatExpectedWebappsSpecService = tomcatExpectedWebappsSpecService;
+        this.dockerExpectedServicesSpecService = dockerExpectedServicesSpecService;
     }
 
     @Transactional
@@ -80,6 +96,8 @@ public class ProvisioningPlanApplyService {
             for (ProvisioningActuatorTargetDto target : server.actuatorTargets()) {
                 applyActuatorTarget(savedServer.getId(), server.clientRef(), target, objects, counter);
             }
+            applyTomcatExpectedWebapps(environment.getId(), savedServer.getId(), server, objects, counter);
+            applyDockerExpectedServices(environment.getId(), savedServer.getId(), server, objects, counter);
         }
 
         return new ProvisioningPlanApplyResultDto(
@@ -88,7 +106,11 @@ public class ProvisioningPlanApplyService {
                         counter.environmentsCreated,
                         counter.serversCreated,
                         counter.tomcatTargetsCreated,
-                        counter.actuatorTargetsCreated
+                        counter.actuatorTargetsCreated,
+                        counter.tomcatExpectedWebappSpecsApplied,
+                        counter.tomcatExpectedWebappItemsApplied,
+                        counter.dockerExpectedServiceSpecsApplied,
+                        counter.dockerExpectedServiceItemsApplied
                 ),
                 List.copyOf(objects),
                 validation
@@ -218,10 +240,103 @@ public class ProvisioningPlanApplyService {
         ));
     }
 
+    private void applyTomcatExpectedWebapps(
+            UUID environmentId,
+            UUID serverId,
+            ProvisioningServerDto server,
+            List<ProvisioningAppliedObjectDto> objects,
+            Counter counter
+    ) {
+        if (server.tomcatExpectedWebapps().changeMode() != ProvisioningExpectedSetChangeModeDto.REPLACE) {
+            return;
+        }
+
+        List<TomcatExpectedWebappsSpecDto> specs = server.tomcatExpectedWebapps().specs().stream()
+                .map(spec -> new TomcatExpectedWebappsSpecDto(
+                        serverId,
+                        spec.role(),
+                        spec.mode(),
+                        spec.templateId(),
+                        spec.items() == null ? List.of() : List.copyOf(spec.items())
+                ))
+                .toList();
+        tomcatExpectedWebappsSpecService.replaceForServer(
+                environmentId,
+                serverId,
+                new TomcatExpectedWebappsSpecReplaceRequestDto(specs)
+        );
+        counter.tomcatExpectedWebappSpecsApplied += specs.size();
+        counter.tomcatExpectedWebappItemsApplied += countExplicitItems(server.tomcatExpectedWebapps().specs());
+        objects.add(new ProvisioningAppliedObjectDto(
+                ProvisioningPlanObjectTypeDto.TOMCAT_EXPECTED_WEBAPPS,
+                server.clientRef().trim(),
+                serverId,
+                "replace tomcat expected webapps (" + specs.size() + " specs)"
+        ));
+    }
+
+    private void applyDockerExpectedServices(
+            UUID environmentId,
+            UUID serverId,
+            ProvisioningServerDto server,
+            List<ProvisioningAppliedObjectDto> objects,
+            Counter counter
+    ) {
+        if (server.dockerExpectedServices().changeMode() != ProvisioningExpectedSetChangeModeDto.REPLACE) {
+            return;
+        }
+
+        List<DockerExpectedServicesSpecDto> specs = server.dockerExpectedServices().specs().stream()
+                .map(spec -> new DockerExpectedServicesSpecDto(
+                        serverId,
+                        spec.mode(),
+                        spec.templateId(),
+                        spec.items() == null ? List.of() : List.copyOf(spec.items())
+                ))
+                .toList();
+        dockerExpectedServicesSpecService.replaceForServer(
+                environmentId,
+                serverId,
+                new DockerExpectedServicesSpecReplaceRequestDto(specs)
+        );
+        counter.dockerExpectedServiceSpecsApplied += specs.size();
+        counter.dockerExpectedServiceItemsApplied += countExplicitDockerItems(server.dockerExpectedServices().specs());
+        objects.add(new ProvisioningAppliedObjectDto(
+                ProvisioningPlanObjectTypeDto.DOCKER_EXPECTED_SERVICES,
+                server.clientRef().trim(),
+                serverId,
+                "replace docker expected services (" + specs.size() + " specs)"
+        ));
+    }
+
+    private static int countExplicitItems(List<ProvisioningTomcatExpectedWebappsSpecDto> specs) {
+        int count = 0;
+        for (ProvisioningTomcatExpectedWebappsSpecDto spec : specs) {
+            if (spec.mode() == ExpectedSetMode.EXPLICIT) {
+                count += spec.items() == null ? 0 : spec.items().size();
+            }
+        }
+        return count;
+    }
+
+    private static int countExplicitDockerItems(List<ProvisioningDockerExpectedServicesSpecDto> specs) {
+        int count = 0;
+        for (ProvisioningDockerExpectedServicesSpecDto spec : specs) {
+            if (spec.mode() == ExpectedSetMode.EXPLICIT) {
+                count += spec.items() == null ? 0 : spec.items().size();
+            }
+        }
+        return count;
+    }
+
     private static final class Counter {
         int environmentsCreated;
         int serversCreated;
         int tomcatTargetsCreated;
         int actuatorTargetsCreated;
+        int tomcatExpectedWebappSpecsApplied;
+        int tomcatExpectedWebappItemsApplied;
+        int dockerExpectedServiceSpecsApplied;
+        int dockerExpectedServiceItemsApplied;
     }
 }

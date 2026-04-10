@@ -32,8 +32,6 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @Service
 public class TomcatExpectedWebappsSpecService {
-    private static final Set<String> BUILT_IN_WEBAPPS = Set.of("/", "/manager", "/host-manager", "/docs", "/examples");
-
     private final EnvironmentRepository environmentRepository;
     private final ServerRepository serverRepository;
     private final TomcatTargetRepository tomcatTargetRepository;
@@ -352,21 +350,9 @@ public class TomcatExpectedWebappsSpecService {
     }
 
     private static void validateWebappPaths(List<String> items) {
-        Set<String> seen = new HashSet<>();
-        for (String raw : items) {
-            String path = raw == null ? "" : raw.trim();
-            if (path.isEmpty()) {
-                throw new ResponseStatusException(BAD_REQUEST, "items cannot contain empty values");
-            }
-            if (!path.startsWith("/")) {
-                throw new ResponseStatusException(BAD_REQUEST, "Webapp path must start with '/': " + path);
-            }
-            if (BUILT_IN_WEBAPPS.contains(path)) {
-                throw new ResponseStatusException(BAD_REQUEST, "Built-in Tomcat webapp is not allowed in expected list: " + path);
-            }
-            if (!seen.add(path)) {
-                throw new ResponseStatusException(BAD_REQUEST, "Duplicate item: " + path);
-            }
+        List<ExpectedSetItemValidationIssue> issues = ExpectedSetSpecValidation.validateTomcatWebappPaths(items);
+        if (!issues.isEmpty()) {
+            throw new ResponseStatusException(BAD_REQUEST, issues.getFirst().message());
         }
     }
 

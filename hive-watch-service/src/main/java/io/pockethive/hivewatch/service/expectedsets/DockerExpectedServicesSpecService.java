@@ -285,15 +285,9 @@ public class DockerExpectedServicesSpecService {
     }
 
     private static void validateProfiles(List<String> items) {
-        Set<String> seen = new HashSet<>();
-        for (String raw : items) {
-            String v = raw == null ? "" : raw.trim();
-            if (v.isEmpty()) {
-                throw new ResponseStatusException(BAD_REQUEST, "items cannot contain empty values");
-            }
-            if (!seen.add(v)) {
-                throw new ResponseStatusException(BAD_REQUEST, "Duplicate item: " + v);
-            }
+        List<ExpectedSetItemValidationIssue> issues = ExpectedSetSpecValidation.validateDockerProfiles(items);
+        if (!issues.isEmpty()) {
+            throw new ResponseStatusException(BAD_REQUEST, issues.getFirst().message());
         }
     }
 }
