@@ -1,16 +1,17 @@
 package io.pockethive.hivewatch.service.actuator;
 
+import io.pockethive.hivewatch.service.targets.TargetConnectionValidation;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.regex.Pattern;
 
-final class ActuatorTargetValidation {
+public final class ActuatorTargetValidation {
     private static final Pattern PROFILE_PATTERN = Pattern.compile("[a-zA-Z0-9_-]+");
 
     private ActuatorTargetValidation() {
     }
 
-    static URI parseBaseUrl(String rawBaseUrl) {
+    public static URI parseBaseUrl(String rawBaseUrl) {
         if (rawBaseUrl == null || rawBaseUrl.trim().isBlank()) {
             throw new IllegalArgumentException("baseUrl is required");
         }
@@ -44,7 +45,7 @@ final class ActuatorTargetValidation {
         return base;
     }
 
-    static String sanitizeProfile(String rawProfile) {
+    public static String sanitizeProfile(String rawProfile) {
         if (rawProfile == null || rawProfile.trim().isBlank()) {
             throw new IllegalArgumentException("profile is required");
         }
@@ -55,13 +56,11 @@ final class ActuatorTargetValidation {
         return trimmed;
     }
 
-    static URI endpointUri(String rawBaseUrl, int port, String rawProfile, String suffixPath) {
+    public static URI endpointUri(String rawBaseUrl, int port, String rawProfile, String suffixPath) {
         if (suffixPath == null || suffixPath.isBlank() || suffixPath.charAt(0) != '/') {
             throw new IllegalArgumentException("suffixPath must start with '/'");
         }
-        if (port < 1 || port > 65535) {
-            throw new IllegalArgumentException("port must be 1..65535");
-        }
+        TargetConnectionValidation.validatePort(port);
 
         URI base = parseBaseUrl(rawBaseUrl);
         String profile = sanitizeProfile(rawProfile);
@@ -74,4 +73,3 @@ final class ActuatorTargetValidation {
         }
     }
 }
-

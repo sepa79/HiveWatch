@@ -5,7 +5,6 @@ import io.pockethive.hivewatch.service.api.TomcatWebappDto;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -14,27 +13,38 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 
-final class TomcatManagerHtmlClient {
-    TomcatManagerFetchResult fetchSnapshot(TomcatTargetEntity target) {
+public final class TomcatManagerHtmlClient {
+    public TomcatManagerFetchResult fetchSnapshot(TomcatTargetEntity target) {
+        return fetchSnapshot(new TomcatManagerHtmlEndpoint(
+                target.getBaseUrl(),
+                target.getPort(),
+                target.getUsername(),
+                target.getPassword(),
+                target.getConnectTimeoutMs(),
+                target.getRequestTimeoutMs()
+        ));
+    }
+
+    public TomcatManagerFetchResult fetchSnapshot(TomcatManagerHtmlEndpoint target) {
         URI managerUri;
         try {
-            managerUri = managerHtmlUri(target);
+            managerUri = TomcatTargetValidation.managerHtmlUri(target.baseUrl(), target.port());
         } catch (RuntimeException e) {
             return TomcatManagerFetchResult.error(TomcatScanErrorKind.UNKNOWN, e.getMessage());
         }
 
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(target.getConnectTimeoutMs()))
+                .connectTimeout(Duration.ofMillis(target.connectTimeoutMs()))
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
 
         String basic = Base64.getEncoder().encodeToString(
-                (target.getUsername() + ":" + target.getPassword()).getBytes(StandardCharsets.UTF_8)
+                (target.username() + ":" + target.password()).getBytes(StandardCharsets.UTF_8)
         );
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(managerUri)
-                .timeout(Duration.ofMillis(target.getRequestTimeoutMs()))
+                .timeout(Duration.ofMillis(target.requestTimeoutMs()))
                 .header("Authorization", "Basic " + basic)
                 .GET()
                 .build();
@@ -69,36 +79,17 @@ final class TomcatManagerHtmlClient {
         }
     }
 
-    private static URI managerHtmlUri(TomcatTargetEntity target) {
-        URI base = URI.create(target.getBaseUrl());
-        if (!base.isAbsolute()) {
-            throw new IllegalArgumentException("baseUrl must be absolute");
-        }
-        if (!"http".equalsIgnoreCase(base.getScheme()) && !"https".equalsIgnoreCase(base.getScheme())) {
-            throw new IllegalArgumentException("baseUrl scheme must be http/https");
-        }
-        if (base.getUserInfo() != null) {
-            throw new IllegalArgumentException("baseUrl must not include userinfo");
-        }
-        if (base.getHost() == null || base.getHost().isBlank()) {
-            throw new IllegalArgumentException("baseUrl must include host");
-        }
-        if (base.getPort() != -1) {
-            throw new IllegalArgumentException("baseUrl must not include port; use explicit port field");
-        }
-        String path = base.getPath();
-        if (path != null && !path.isBlank() && !"/".equals(path)) {
-            throw new IllegalArgumentException("baseUrl must not include a path");
-        }
-
-        try {
-            return new URI(base.getScheme(), null, base.getHost(), target.getPort(), "/manager/html", null, null);
-        } catch (URISyntaxException e) {
-            throw new IllegalArgumentException("Invalid manager URI", e);
-        }
+    public record TomcatManagerHtmlEndpoint(
+            String baseUrl,
+            int port,
+            String username,
+            String password,
+            int connectTimeoutMs,
+            int requestTimeoutMs
+    ) {
     }
 
-    record TomcatManagerFetchResult(
+    public record TomcatManagerFetchResult(
             boolean ok,
             List<TomcatWebappDto> webapps,
             String tomcatVersion,

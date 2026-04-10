@@ -21,9 +21,19 @@ public class ActuatorClient {
         this.objectMapper = objectMapper;
     }
 
-    ActuatorFetchResult fetch(ActuatorTargetEntity target) {
+    public ActuatorFetchResult fetch(ActuatorTargetEntity target) {
+        return fetch(new ActuatorEndpoint(
+                target.getBaseUrl(),
+                target.getPort(),
+                target.getProfile(),
+                target.getConnectTimeoutMs(),
+                target.getRequestTimeoutMs()
+        ));
+    }
+
+    public ActuatorFetchResult fetch(ActuatorEndpoint target) {
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(target.getConnectTimeoutMs()))
+                .connectTimeout(Duration.ofMillis(target.connectTimeoutMs()))
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
 
@@ -33,17 +43,17 @@ public class ActuatorClient {
             URI cpuUri = endpointUri(target, "/actuator/metrics/system.cpu.usage");
             URI memUri = endpointUri(target, "/actuator/metrics/jvm.memory.used");
 
-            JsonNode health = getJson(client, healthUri, target.getRequestTimeoutMs());
+            JsonNode health = getJson(client, healthUri, target.requestTimeoutMs());
             String healthStatus = textOrThrow(health, "status");
 
-            JsonNode info = getJson(client, infoUri, target.getRequestTimeoutMs());
+            JsonNode info = getJson(client, infoUri, target.requestTimeoutMs());
             String appName = textOrThrow(info.path("app"), "name");
             String buildVersion = textOrNull(info.path("app").path("build"), "version");
 
-            JsonNode cpu = getJson(client, cpuUri, target.getRequestTimeoutMs());
+            JsonNode cpu = getJson(client, cpuUri, target.requestTimeoutMs());
             double cpuUsage = metricValueAsDoubleOrThrow(cpu);
 
-            JsonNode mem = getJson(client, memUri, target.getRequestTimeoutMs());
+            JsonNode mem = getJson(client, memUri, target.requestTimeoutMs());
             long memoryUsedBytes = metricValueAsLongOrThrow(mem);
 
             return ActuatorFetchResult.success(healthStatus, appName, buildVersion, cpuUsage, memoryUsedBytes);
@@ -54,12 +64,12 @@ public class ActuatorClient {
         }
     }
 
-    private static URI endpointUri(ActuatorTargetEntity target, String suffixPath) {
+    private static URI endpointUri(ActuatorEndpoint target, String suffixPath) {
         try {
             return ActuatorTargetValidation.endpointUri(
-                    target.getBaseUrl(),
-                    target.getPort(),
-                    target.getProfile(),
+                    target.baseUrl(),
+                    target.port(),
+                    target.profile(),
                     suffixPath
             );
         } catch (IllegalArgumentException e) {
@@ -164,7 +174,16 @@ public class ActuatorClient {
         }
     }
 
-    record ActuatorFetchResult(
+    public record ActuatorEndpoint(
+            String baseUrl,
+            int port,
+            String profile,
+            int connectTimeoutMs,
+            int requestTimeoutMs
+    ) {
+    }
+
+    public record ActuatorFetchResult(
             boolean ok,
             String healthStatus,
             String appName,

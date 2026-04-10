@@ -10,7 +10,6 @@ import io.pockethive.hivewatch.service.api.TomcatWebappDto;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
-import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -162,45 +161,14 @@ public class TomcatTargetService {
         if (request.role() == null) {
             throw new ResponseStatusException(BAD_REQUEST, "role is required");
         }
-        if (request.baseUrl() == null || request.baseUrl().trim().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl is required");
-        }
-        URI base;
         try {
-            base = URI.create(request.baseUrl().trim());
-        } catch (RuntimeException e) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl is invalid");
-        }
-        if (!base.isAbsolute() || base.getHost() == null || base.getHost().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl must be absolute and include host");
-        }
-        if (!"http".equalsIgnoreCase(base.getScheme()) && !"https".equalsIgnoreCase(base.getScheme())) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl scheme must be http/https");
-        }
-        if (base.getUserInfo() != null) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl must not include userinfo");
-        }
-        if (base.getPort() != -1) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl must not include port; use explicit port");
-        }
-        String path = base.getPath();
-        if (path != null && !path.isBlank() && !"/".equals(path)) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl must not include a path");
-        }
-        if (request.port() < 1 || request.port() > 65535) {
-            throw new ResponseStatusException(BAD_REQUEST, "port must be 1..65535");
-        }
-        if (request.username() == null || request.username().trim().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "username is required");
-        }
-        if (request.password() == null || request.password().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "password is required");
-        }
-        if (request.connectTimeoutMs() <= 0) {
-            throw new ResponseStatusException(BAD_REQUEST, "connectTimeoutMs must be > 0");
-        }
-        if (request.requestTimeoutMs() <= 0) {
-            throw new ResponseStatusException(BAD_REQUEST, "requestTimeoutMs must be > 0");
+            TomcatTargetValidation.parseBaseUrl(request.baseUrl());
+            TomcatTargetValidation.validatePort(request.port());
+            TomcatTargetValidation.sanitizeUsername(request.username());
+            TomcatTargetValidation.requirePassword(request.password());
+            TomcatTargetValidation.validateTimeouts(request.connectTimeoutMs(), request.requestTimeoutMs());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(BAD_REQUEST, e.getMessage());
         }
     }
 
@@ -214,45 +182,14 @@ public class TomcatTargetService {
         if (request.role() == null) {
             throw new ResponseStatusException(BAD_REQUEST, "role is required");
         }
-        if (request.baseUrl() == null || request.baseUrl().trim().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl is required");
-        }
-        URI base;
         try {
-            base = URI.create(request.baseUrl().trim());
-        } catch (RuntimeException e) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl is invalid");
-        }
-        if (!base.isAbsolute() || base.getHost() == null || base.getHost().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl must be absolute and include host");
-        }
-        if (!"http".equalsIgnoreCase(base.getScheme()) && !"https".equalsIgnoreCase(base.getScheme())) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl scheme must be http/https");
-        }
-        if (base.getUserInfo() != null) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl must not include userinfo");
-        }
-        if (base.getPort() != -1) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl must not include port; use explicit port");
-        }
-        String path = base.getPath();
-        if (path != null && !path.isBlank() && !"/".equals(path)) {
-            throw new ResponseStatusException(BAD_REQUEST, "baseUrl must not include a path");
-        }
-        if (request.port() < 1 || request.port() > 65535) {
-            throw new ResponseStatusException(BAD_REQUEST, "port must be 1..65535");
-        }
-        if (request.username() == null || request.username().trim().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "username is required");
-        }
-        if (request.password() == null || request.password().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "password is required");
-        }
-        if (request.connectTimeoutMs() <= 0) {
-            throw new ResponseStatusException(BAD_REQUEST, "connectTimeoutMs must be > 0");
-        }
-        if (request.requestTimeoutMs() <= 0) {
-            throw new ResponseStatusException(BAD_REQUEST, "requestTimeoutMs must be > 0");
+            TomcatTargetValidation.parseBaseUrl(request.baseUrl());
+            TomcatTargetValidation.validatePort(request.port());
+            TomcatTargetValidation.sanitizeUsername(request.username());
+            TomcatTargetValidation.requirePassword(request.password());
+            TomcatTargetValidation.validateTimeouts(request.connectTimeoutMs(), request.requestTimeoutMs());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(BAD_REQUEST, e.getMessage());
         }
     }
 
