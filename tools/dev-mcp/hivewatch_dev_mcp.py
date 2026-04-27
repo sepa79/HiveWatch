@@ -66,6 +66,22 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "hivewatch_api_put",
+        "description": "Call a local HiveWatch PUT API endpoint using dev-header auth.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "HTTP path, for example /api/v1/admin/environments/{environmentId}/target-roles."},
+                "body": {"type": "object", "default": {}},
+                "baseUrl": {"type": "string", "default": DEFAULT_API_BASE_URL},
+                "username": {"type": "string", "default": DEFAULT_DEV_USERNAME},
+                "timeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 30, "default": 10},
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "hivewatch_db_read",
         "description": "Run a read-only SELECT/WITH query against the local HiveWatch Postgres container and return CSV.",
         "inputSchema": {
@@ -190,6 +206,8 @@ def call_tool(tool_name: str, args: dict[str, Any]) -> str:
         return api_request("GET", args)
     if tool_name == "hivewatch_api_post":
         return api_request("POST", args)
+    if tool_name == "hivewatch_api_put":
+        return api_request("PUT", args)
     if tool_name == "hivewatch_db_read":
         return db_read(args)
     if tool_name == "hivewatch_docker_ps":
@@ -215,7 +233,7 @@ def api_request(method: str, args: dict[str, Any]) -> str:
 
     data: bytes | None = None
     headers = {"X-HW-Username": username, "Accept": "application/json"}
-    if method == "POST":
+    if method in {"POST", "PUT"}:
         body = args.get("body") or {}
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"

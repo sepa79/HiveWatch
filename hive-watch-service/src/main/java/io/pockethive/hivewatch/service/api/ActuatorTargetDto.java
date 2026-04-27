@@ -6,7 +6,7 @@ public record ActuatorTargetDto(
         UUID id,
         UUID serverId,
         String serverName,
-        TomcatRole role,
+        String role,
         String baseUrl,
         int port,
         String profile,

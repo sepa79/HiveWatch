@@ -11,16 +11,19 @@ import {
   deleteServer,
   deleteTomcatTarget,
   fetchActuatorTargets,
+  fetchEnvironmentTargetRoles,
   fetchEnvironmentStatus,
   fetchServers,
   fetchTomcatTargets,
   renameAdminEnvironment,
+  replaceEnvironmentTargetRoles,
   updateActuatorTarget,
   updateServer,
   updateTomcatTarget,
   type ActuatorTarget,
   type ActuatorTargetCreateRequest,
   type EnvironmentStatus,
+  type EnvironmentTargetRole,
   type ExpectedSetTemplateCreateRequest,
   type ExpectedSetTemplate,
   type Server,
@@ -41,6 +44,7 @@ type LoadState =
       status: EnvironmentStatus
       tomcatTemplates: ExpectedSetTemplate[]
       dockerTemplates: ExpectedSetTemplate[]
+      targetRoles: EnvironmentTargetRole[]
     }
   | { kind: 'error'; message: string }
 
@@ -68,6 +72,9 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
   const [tomcatTemplateForm, setTomcatTemplateForm] = useState({ name: '', items: '' })
   const [dockerTemplateForm, setDockerTemplateForm] = useState({ name: '', items: '' })
   const [templateError, setTemplateError] = useState<string | null>(null)
+  const [roleDrafts, setRoleDrafts] = useState<EnvironmentTargetRole[]>([])
+  const [savingRoles, setSavingRoles] = useState(false)
+  const [roleError, setRoleError] = useState<string | null>(null)
 
   const [editingEnvName, setEditingEnvName] = useState(false)
   const [envNameDraft, setEnvNameDraft] = useState('')
@@ -84,7 +91,7 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
 
   const [form, setForm] = useState<TomcatTargetCreateRequest>({
     serverId: '',
-    role: 'PAYMENTS',
+    role: '',
     baseUrl: 'http://hc-dummy-nft-01-touchpoint-tomcats',
     port: 8081,
     username: 'hc-manager',
@@ -95,7 +102,7 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
 
   const [actuatorForm, setActuatorForm] = useState<ActuatorTargetCreateRequest>({
     serverId: '',
-    role: 'PAYMENTS',
+    role: '',
     baseUrl: 'http://hc-dummy-nft-01-docker-swarm-microservices',
     port: 8080,
     profile: 'payments',
@@ -113,8 +120,9 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
       fetchEnvironmentStatus(environmentId, signal),
       fetchExpectedSetTemplates('TOMCAT_WEBAPP_PATH', signal),
       fetchExpectedSetTemplates('DOCKER_SERVICE_PROFILE', signal),
+      fetchEnvironmentTargetRoles(environmentId, signal),
     ])
-      .then(([servers, targets, actuatorTargets, status, tomcatTemplates, dockerTemplates]) => {
+      .then(([servers, targets, actuatorTargets, status, tomcatTemplates, dockerTemplates, targetRoles]) => {
         setState({
           kind: 'ready',
           servers,
@@ -123,6 +131,7 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
           status,
           tomcatTemplates,
           dockerTemplates,
+          targetRoles,
         })
       })
       .catch((e) => setState({ kind: 'error', message: e instanceof Error ? e.message : 'Request failed' }))
@@ -153,9 +162,26 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
 
   useEffect(() => {
     if (state.kind !== 'ready') return
+    const firstActiveRole = state.targetRoles.find((role) => role.active)?.code
+    if (!firstActiveRole) return
+    if (!state.targetRoles.some((role) => role.active && role.code === form.role)) {
+      setForm((f) => ({ ...f, role: firstActiveRole }))
+    }
+    if (!state.targetRoles.some((role) => role.active && role.code === actuatorForm.role)) {
+      setActuatorForm((f) => ({ ...f, role: firstActiveRole }))
+    }
+  }, [actuatorForm.role, form.role, state])
+
+  useEffect(() => {
+    if (state.kind !== 'ready') return
     if (editingEnvName) return
     setEnvNameDraft(state.status.environmentName)
   }, [editingEnvName, state])
+
+  useEffect(() => {
+    if (state.kind !== 'ready') return
+    setRoleDrafts(state.targetRoles)
+  }, [state])
 
   const title = useMemo(() => {
     const suffix = (() => {
@@ -204,14 +230,12 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
     }
   }
 
-  const roleLabel = (role: TomcatRole) => {
-    const labels: Record<TomcatRole, string> = {
-      PAYMENTS: 'payments',
-      SERVICES: 'services',
-      AUTH: 'auth',
-    }
-    return labels[role]
-  }
+  const roleLabel = (role: TomcatRole) => (state.kind === 'ready' ? state.targetRoles.find((candidate) => candidate.code === role)?.label ?? role : role)
+
+  const roleOptions = (current?: TomcatRole) =>
+    state.kind === 'ready'
+      ? state.targetRoles.filter((role) => role.active || role.code === current)
+      : []
 
   const formatCpu = (cpuUsage: number | null) => {
     if (cpuUsage == null) return '—'
@@ -309,6 +333,30 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
       .then(() => setEditingEnvName(false))
       .catch((e) => setEnvNameError(e instanceof Error ? e.message : 'Request failed'))
       .finally(() => setSavingEnvName(false))
+  }
+
+  const saveTargetRoles = () => {
+    if (!isAdmin) {
+      setRoleError('Admin role is required to edit target roles.')
+      return
+    }
+    const normalized = roleDrafts.map((role, index) => ({
+      code: role.code.trim(),
+      label: role.label.trim(),
+      sortOrder: Number.isFinite(role.sortOrder) ? role.sortOrder : (index + 1) * 10,
+      active: role.active,
+    }))
+    if (normalized.some((role) => !role.code || !role.label)) {
+      setRoleError('Code and label are required for every role.')
+      return
+    }
+    setSavingRoles(true)
+    setRoleError(null)
+    const controller = new AbortController()
+    replaceEnvironmentTargetRoles(environmentId, { roles: normalized }, controller.signal)
+      .then(() => refresh(controller.signal))
+      .catch((e) => setRoleError(e instanceof Error ? e.message : 'Request failed'))
+      .finally(() => setSavingRoles(false))
   }
 
   const createTemplate = (request: ExpectedSetTemplateCreateRequest, setCreating: (v: boolean) => void, onClear: () => void) => {
@@ -476,6 +524,120 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
                 No issues.
               </div>
             )}
+          </div>
+
+          <div className="card" style={{ padding: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="h2" style={{ margin: 0 }}>
+                Target roles
+              </div>
+              {isAdmin ? (
+                <>
+                  <button
+                    type="button"
+                    className="button"
+                    style={{ marginLeft: 'auto' }}
+                    disabled={savingRoles}
+                    onClick={() =>
+                      setRoleDrafts((current) => [
+                        ...current,
+                        { code: '', label: '', sortOrder: (current.length + 1) * 10, active: true },
+                      ])
+                    }
+                  >
+                    Add
+                  </button>
+                  <button type="button" className="button" disabled={savingRoles} onClick={saveTargetRoles}>
+                    {savingRoles ? 'Saving…' : 'Save'}
+                  </button>
+                </>
+              ) : null}
+            </div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Roles are configured per environment and reused by Tomcats and Microservices.
+            </div>
+            {roleError ? <div className="muted" style={{ marginTop: 8 }}>Error: {roleError}</div> : null}
+            <div className="tableWrap" style={{ marginTop: 10 }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Label</th>
+                    <th>Order</th>
+                    <th>Active</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {roleDrafts.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="muted">No target roles.</td>
+                    </tr>
+                  ) : null}
+                  {roleDrafts.map((role, index) => (
+                    <tr key={`${role.code}-${index}`}>
+                      <td>
+                        <input
+                          className="fieldInput"
+                          value={role.code}
+                          disabled={!isAdmin || savingRoles}
+                          onChange={(e) =>
+                            setRoleDrafts((current) => current.map((item, i) => (i === index ? { ...item, code: e.target.value } : item)))
+                          }
+                          aria-label={`Target role code ${index + 1}`}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="fieldInput"
+                          value={role.label}
+                          disabled={!isAdmin || savingRoles}
+                          onChange={(e) =>
+                            setRoleDrafts((current) => current.map((item, i) => (i === index ? { ...item, label: e.target.value } : item)))
+                          }
+                          aria-label={`Target role label ${index + 1}`}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="fieldInput"
+                          type="number"
+                          value={role.sortOrder}
+                          disabled={!isAdmin || savingRoles}
+                          onChange={(e) =>
+                            setRoleDrafts((current) => current.map((item, i) => (i === index ? { ...item, sortOrder: Number(e.target.value) } : item)))
+                          }
+                          aria-label={`Target role order ${index + 1}`}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={role.active}
+                          disabled={!isAdmin || savingRoles}
+                          onChange={(e) =>
+                            setRoleDrafts((current) => current.map((item, i) => (i === index ? { ...item, active: e.target.checked } : item)))
+                          }
+                          aria-label={`Target role active ${index + 1}`}
+                        />
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={savingRoles}
+                            onClick={() => setRoleDrafts((current) => current.filter((_, i) => i !== index))}
+                          >
+                            Del
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="card" style={{ padding: 12 }}>
@@ -1132,9 +1294,12 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
                                 }
                                 required
                               >
-                                <option value="PAYMENTS">payments</option>
-                                <option value="SERVICES">services</option>
-                                <option value="AUTH">auth</option>
+                                <option value="" disabled>
+                                  Select role…
+                                </option>
+                                {roleOptions(tomcatEditForm.role).map((role) => (
+                                  <option key={role.code} value={role.code}>{role.label}</option>
+                                ))}
                               </select>
                             </label>
                             <label className="field">
@@ -1342,9 +1507,12 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
                                 }
                                 required
                               >
-                                <option value="PAYMENTS">payments</option>
-                                <option value="SERVICES">services</option>
-                                <option value="AUTH">auth</option>
+                                <option value="" disabled>
+                                  Select role…
+                                </option>
+                                {roleOptions(actuatorEditForm.role).map((role) => (
+                                  <option key={role.code} value={role.code}>{role.label}</option>
+                                ))}
                               </select>
                             </label>
                             <label className="field">
@@ -1509,9 +1677,12 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
                 onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as TomcatRole }))}
                 required
               >
-                <option value="PAYMENTS">payments</option>
-                <option value="SERVICES">services</option>
-                <option value="AUTH">auth</option>
+                <option value="" disabled>
+                  Select role…
+                </option>
+                {roleOptions(form.role).map((role) => (
+                  <option key={role.code} value={role.code}>{role.label}</option>
+                ))}
               </select>
             </label>
             <label className="field">
@@ -1631,9 +1802,12 @@ export function EnvironmentDetailPage({ view }: { view: EnvironmentDetailView })
                 onChange={(e) => setActuatorForm((f) => ({ ...f, role: e.target.value as TomcatRole }))}
                 required
               >
-                <option value="PAYMENTS">payments</option>
-                <option value="SERVICES">services</option>
-                <option value="AUTH">auth</option>
+                <option value="" disabled>
+                  Select role…
+                </option>
+                {roleOptions(actuatorForm.role).map((role) => (
+                  <option key={role.code} value={role.code}>{role.label}</option>
+                ))}
               </select>
             </label>
             <label className="field">

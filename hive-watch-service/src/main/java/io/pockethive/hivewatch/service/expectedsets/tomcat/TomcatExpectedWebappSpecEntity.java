@@ -1,7 +1,6 @@
 package io.pockethive.hivewatch.service.expectedsets.tomcat;
 
 import io.pockethive.hivewatch.service.api.ExpectedSetMode;
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -20,9 +19,8 @@ public class TomcatExpectedWebappSpecEntity {
     @Column(name = "server_id", nullable = false)
     private UUID serverId;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false)
-    private TomcatRole role;
+    private String role;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "mode", nullable = false)
@@ -40,7 +38,7 @@ public class TomcatExpectedWebappSpecEntity {
     public TomcatExpectedWebappSpecEntity(
             UUID id,
             UUID serverId,
-            TomcatRole role,
+            String role,
             ExpectedSetMode mode,
             UUID templateId,
             Instant createdAt
@@ -61,7 +59,7 @@ public class TomcatExpectedWebappSpecEntity {
         return serverId;
     }
 
-    public TomcatRole getRole() {
+    public String getRole() {
         return role;
     }
 
@@ -77,4 +75,3 @@ public class TomcatExpectedWebappSpecEntity {
         return createdAt;
     }
 }
-

@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record ProvisioningTomcatExpectedWebappsSpecDto(
-        TomcatRole role,
+        String role,
         ExpectedSetMode mode,
         UUID templateId,
         List<String> items

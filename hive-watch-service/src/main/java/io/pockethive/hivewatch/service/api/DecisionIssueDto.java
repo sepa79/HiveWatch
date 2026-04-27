@@ -7,7 +7,7 @@ public record DecisionIssueDto(
         DecisionIssueKind kind,
         UUID targetId,
         String serverName,
-        TomcatRole role,
+        String role,
         String label,
         String message
 ) {

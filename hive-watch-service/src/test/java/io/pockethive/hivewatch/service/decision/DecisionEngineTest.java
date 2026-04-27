@@ -1,7 +1,6 @@
 package io.pockethive.hivewatch.service.decision;
 
 import io.pockethive.hivewatch.service.api.DecisionVerdict;
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import io.pockethive.hivewatch.service.api.TomcatScanErrorKind;
 import io.pockethive.hivewatch.service.api.TomcatScanOutcomeKind;
 import java.time.Instant;
@@ -21,7 +20,7 @@ class DecisionEngineTest {
                 List.of(new DecisionInputs.ActuatorTargetObservation(
                         UUID.randomUUID(),
                         "Docker Swarm",
-                        TomcatRole.SERVICES,
+                        "SERVICES",
                         "http://example",
                         8080,
                         "services",
@@ -47,7 +46,7 @@ class DecisionEngineTest {
                 List.of(new DecisionInputs.ActuatorTargetObservation(
                         UUID.randomUUID(),
                         "Docker Swarm",
-                        TomcatRole.SERVICES,
+                        "SERVICES",
                         "http://example",
                         8080,
                         "services",
@@ -72,7 +71,7 @@ class DecisionEngineTest {
                 List.of(new DecisionInputs.TomcatTargetObservation(
                         UUID.randomUUID(),
                         "Touchpoint",
-                        TomcatRole.AUTH,
+                        "AUTH",
                         "http://example",
                         8081,
                         null,
@@ -93,7 +92,7 @@ class DecisionEngineTest {
                 List.of(new DecisionInputs.TomcatTargetObservation(
                         UUID.randomUUID(),
                         "Touchpoint",
-                        TomcatRole.AUTH,
+                        "AUTH",
                         "http://example",
                         8081,
                         Instant.now(),

@@ -17,7 +17,6 @@ import io.pockethive.hivewatch.service.api.ProvisioningTomcatExpectedWebappsDto;
 import io.pockethive.hivewatch.service.api.ProvisioningTomcatExpectedWebappsSpecDto;
 import io.pockethive.hivewatch.service.api.ProvisioningTomcatTargetDto;
 import io.pockethive.hivewatch.service.api.TargetAdapterTypeDto;
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import io.pockethive.hivewatch.service.security.CurrentUserService;
 import io.pockethive.hivewatch.service.security.HiveWatchPrincipal;
 import java.util.List;
@@ -102,7 +101,7 @@ class ConfigAuditServiceTest {
                         null,
                         "Touchpoint",
                         List.of(new ProvisioningTomcatTargetDto(
-                                TomcatRole.PAYMENTS,
+                                "PAYMENTS",
                                 TargetAdapterTypeDto.TOMCAT_MANAGER_HTML,
                                 "http://nft03-tomcats.internal",
                                 8081,
@@ -112,7 +111,7 @@ class ConfigAuditServiceTest {
                                 5000
                         )),
                         List.of(new ProvisioningActuatorTargetDto(
-                                TomcatRole.PAYMENTS,
+                                "PAYMENTS",
                                 TargetAdapterTypeDto.ACTUATOR_HTTP,
                                 "http://nft03-services.internal",
                                 8080,
@@ -123,7 +122,7 @@ class ConfigAuditServiceTest {
                         new ProvisioningTomcatExpectedWebappsDto(
                                 ProvisioningExpectedSetChangeModeDto.REPLACE,
                                 List.of(new ProvisioningTomcatExpectedWebappsSpecDto(
-                                        TomcatRole.PAYMENTS,
+                                        "PAYMENTS",
                                         ExpectedSetMode.EXPLICIT,
                                         null,
                                         List.of("/payments")

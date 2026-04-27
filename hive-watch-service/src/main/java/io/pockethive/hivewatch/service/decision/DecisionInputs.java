@@ -1,6 +1,5 @@
 package io.pockethive.hivewatch.service.decision;
 
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import io.pockethive.hivewatch.service.api.TomcatScanErrorKind;
 import io.pockethive.hivewatch.service.api.TomcatScanOutcomeKind;
 import java.time.Instant;
@@ -13,7 +12,7 @@ public final class DecisionInputs {
     public record TomcatTargetObservation(
             UUID targetId,
             String serverName,
-            TomcatRole role,
+            String role,
             String baseUrl,
             int port,
             Instant scannedAt,
@@ -26,7 +25,7 @@ public final class DecisionInputs {
     public record ActuatorTargetObservation(
             UUID targetId,
             String serverName,
-            TomcatRole role,
+            String role,
             String baseUrl,
             int port,
             String profile,

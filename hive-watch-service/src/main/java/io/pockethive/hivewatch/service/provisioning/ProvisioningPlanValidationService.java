@@ -23,7 +23,6 @@ import io.pockethive.hivewatch.service.api.ProvisioningTomcatExpectedWebappsDto;
 import io.pockethive.hivewatch.service.api.ProvisioningTomcatExpectedWebappsSpecDto;
 import io.pockethive.hivewatch.service.api.ProvisioningTomcatTargetDto;
 import io.pockethive.hivewatch.service.api.TargetAdapterTypeDto;
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
@@ -37,7 +36,6 @@ import io.pockethive.hivewatch.service.tomcat.TomcatTargetEntity;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetRepository;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetValidation;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -290,24 +288,24 @@ public class ProvisioningPlanValidationService {
             warning(warnings, path, "server has no targets");
         }
 
-        Set<TomcatRole> existingTomcatRoles = existingServerId == null
-                ? EnumSet.noneOf(TomcatRole.class)
+        Set<String> existingTomcatRoles = existingServerId == null
+                ? new HashSet<>()
                 : existingTomcatRoles(existingServerId);
-        Set<TomcatRole> existingActuatorRoles = existingServerId == null
-                ? EnumSet.noneOf(TomcatRole.class)
+        Set<String> existingActuatorRoles = existingServerId == null
+                ? new HashSet<>()
                 : existingActuatorRoles(existingServerId);
 
-        Set<TomcatRole> tomcatRoles = EnumSet.noneOf(TomcatRole.class);
+        Set<String> tomcatRoles = new HashSet<>();
         for (int i = 0; i < server.tomcatTargets().size(); i++) {
             validateTomcatTarget(server.tomcatTargets().get(i), path + "/tomcatTargets/" + i, trimmed(server.clientRef()), tomcatRoles, existingTomcatRoles, errors, diff);
         }
 
-        Set<TomcatRole> actuatorRoles = EnumSet.noneOf(TomcatRole.class);
+        Set<String> actuatorRoles = new HashSet<>();
         for (int i = 0; i < server.actuatorTargets().size(); i++) {
             validateActuatorTarget(server.actuatorTargets().get(i), path + "/actuatorTargets/" + i, trimmed(server.clientRef()), actuatorRoles, existingActuatorRoles, errors, diff);
         }
 
-        Set<TomcatRole> availableTomcatRoles = EnumSet.noneOf(TomcatRole.class);
+        Set<String> availableTomcatRoles = new HashSet<>();
         availableTomcatRoles.addAll(existingTomcatRoles);
         availableTomcatRoles.addAll(tomcatRoles);
         return new TargetRoleState(availableTomcatRoles);
@@ -329,7 +327,7 @@ public class ProvisioningPlanValidationService {
             ProvisioningTomcatExpectedWebappsDto expected,
             String path,
             String serverClientRef,
-            Set<TomcatRole> availableRoles,
+            Set<String> availableRoles,
             List<ProvisioningPlanIssueDto> errors,
             List<ProvisioningPlanDiffDto> diff
     ) {
@@ -352,7 +350,7 @@ public class ProvisioningPlanValidationService {
             return;
         }
 
-        Set<TomcatRole> seenRoles = EnumSet.noneOf(TomcatRole.class);
+        Set<String> seenRoles = new HashSet<>();
         for (int i = 0; i < expected.specs().size(); i++) {
             validateTomcatExpectedWebappsSpec(expected.specs().get(i), path + "/specs/" + i, availableRoles, seenRoles, errors);
         }
@@ -367,8 +365,8 @@ public class ProvisioningPlanValidationService {
     private void validateTomcatExpectedWebappsSpec(
             ProvisioningTomcatExpectedWebappsSpecDto spec,
             String path,
-            Set<TomcatRole> availableRoles,
-            Set<TomcatRole> seenRoles,
+            Set<String> availableRoles,
+            Set<String> seenRoles,
             List<ProvisioningPlanIssueDto> errors
     ) {
         if (spec == null) {
@@ -509,8 +507,8 @@ public class ProvisioningPlanValidationService {
             ProvisioningTomcatTargetDto target,
             String path,
             String serverClientRef,
-            Set<TomcatRole> planRoles,
-            Set<TomcatRole> existingRoles,
+            Set<String> planRoles,
+            Set<String> existingRoles,
             List<ProvisioningPlanIssueDto> errors,
             List<ProvisioningPlanDiffDto> diff
     ) {
@@ -539,8 +537,8 @@ public class ProvisioningPlanValidationService {
             ProvisioningActuatorTargetDto target,
             String path,
             String serverClientRef,
-            Set<TomcatRole> planRoles,
-            Set<TomcatRole> existingRoles,
+            Set<String> planRoles,
+            Set<String> existingRoles,
             List<ProvisioningPlanIssueDto> errors,
             List<ProvisioningPlanDiffDto> diff
     ) {
@@ -566,10 +564,10 @@ public class ProvisioningPlanValidationService {
     }
 
     private void validateRole(
-            TomcatRole role,
+            String role,
             String path,
-            Set<TomcatRole> planRoles,
-            Set<TomcatRole> existingRoles,
+            Set<String> planRoles,
+            Set<String> existingRoles,
             List<ProvisioningPlanIssueDto> errors
     ) {
         if (role == null) {
@@ -599,16 +597,16 @@ public class ProvisioningPlanValidationService {
         tryValidate(errors, path + "/timeouts", () -> TargetConnectionValidation.validateTimeouts(target.connectTimeoutMs(), target.requestTimeoutMs()));
     }
 
-    private Set<TomcatRole> existingTomcatRoles(UUID serverId) {
-        Set<TomcatRole> roles = EnumSet.noneOf(TomcatRole.class);
+    private Set<String> existingTomcatRoles(UUID serverId) {
+        Set<String> roles = new HashSet<>();
         for (TomcatTargetEntity target : tomcatTargetRepository.findByServerIdIn(List.of(serverId))) {
             roles.add(target.getRole());
         }
         return roles;
     }
 
-    private Set<TomcatRole> existingActuatorRoles(UUID serverId) {
-        Set<TomcatRole> roles = EnumSet.noneOf(TomcatRole.class);
+    private Set<String> existingActuatorRoles(UUID serverId) {
+        Set<String> roles = new HashSet<>();
         for (ActuatorTargetEntity target : actuatorTargetRepository.findByServerIdIn(List.of(serverId))) {
             roles.add(target.getRole());
         }
@@ -648,9 +646,9 @@ public class ProvisioningPlanValidationService {
         void run();
     }
 
-    private record TargetRoleState(Set<TomcatRole> tomcatRoles) {
+    private record TargetRoleState(Set<String> tomcatRoles) {
         private static TargetRoleState empty() {
-            return new TargetRoleState(EnumSet.noneOf(TomcatRole.class));
+            return new TargetRoleState(new HashSet<>());
         }
     }
 }

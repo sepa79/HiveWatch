@@ -1106,6 +1106,107 @@ code {
   border-bottom: 0;
 }
 
+.tabRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border2);
+}
+
+.tabButton {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.tabButton:hover {
+  color: inherit;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tabButtonActive {
+  color: inherit;
+  border-color: var(--border2);
+  background: var(--panel);
+}
+
+.serverTabPanel {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.panelSection {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sectionHeader > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: auto;
+  padding: 72px 16px 24px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.modalPanel {
+  width: min(760px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #111318;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+  padding: 14px 16px;
+}
+
+:root[data-theme='light'] .modalPanel {
+  background: #fff;
+}
+
+.modalFormGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .sectionHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .modalFormGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .modalFormGrid > * {
+    grid-column: 1 !important;
+  }
+}
+
 .toolsRow {
   display: flex;
   align-items: center;

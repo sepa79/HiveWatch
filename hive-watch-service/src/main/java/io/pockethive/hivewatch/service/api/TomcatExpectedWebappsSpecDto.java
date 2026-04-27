@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public record TomcatExpectedWebappsSpecDto(
         UUID serverId,
-        TomcatRole role,
+        String role,
         ExpectedSetMode mode,
         UUID templateId,
         List<String> items

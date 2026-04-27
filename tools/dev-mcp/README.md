@@ -13,6 +13,8 @@ Available tools:
   - Calls a local HiveWatch GET endpoint with dev-header auth.
 - `hivewatch_api_post`
   - Calls a local HiveWatch POST endpoint with dev-header auth.
+- `hivewatch_api_put`
+  - Calls a local HiveWatch PUT endpoint with dev-header auth.
 - `hivewatch_db_read`
   - Runs a read-only `SELECT` or `WITH` query against the local `hivewatch-postgres` container.
   - Returns CSV.

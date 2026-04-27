@@ -5,6 +5,7 @@ import io.pockethive.hivewatch.service.api.EnvironmentCloneRequestDto;
 import io.pockethive.hivewatch.service.api.EnvironmentCloneResultDto;
 import io.pockethive.hivewatch.service.api.EnvironmentSummaryDto;
 import io.pockethive.hivewatch.service.api.EnvironmentUpdateRequestDto;
+import io.pockethive.hivewatch.service.targetroles.EnvironmentTargetRoleService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,10 +26,16 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 public class AdminEnvironmentController {
     private final EnvironmentRepository environmentRepository;
     private final EnvironmentCloneService environmentCloneService;
+    private final EnvironmentTargetRoleService targetRoleService;
 
-    public AdminEnvironmentController(EnvironmentRepository environmentRepository, EnvironmentCloneService environmentCloneService) {
+    public AdminEnvironmentController(
+            EnvironmentRepository environmentRepository,
+            EnvironmentCloneService environmentCloneService,
+            EnvironmentTargetRoleService targetRoleService
+    ) {
         this.environmentRepository = environmentRepository;
         this.environmentCloneService = environmentCloneService;
+        this.targetRoleService = targetRoleService;
     }
 
     @GetMapping("/api/v1/admin/environments")
@@ -51,6 +58,7 @@ public class AdminEnvironmentController {
             throw new ResponseStatusException(BAD_REQUEST, "name already exists");
         }
         EnvironmentEntity saved = environmentRepository.save(new EnvironmentEntity(UUID.randomUUID(), name));
+        targetRoleService.createDefaults(saved.getId());
         return new EnvironmentSummaryDto(saved.getId(), saved.getName());
     }
 

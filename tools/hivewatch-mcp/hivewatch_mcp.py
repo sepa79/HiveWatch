@@ -50,6 +50,20 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "hivewatch_list_environment_target_roles",
+        "description": "List configured target roles for one HiveWatch environment through the normal API.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "environmentId": {"type": "string", "description": "HiveWatch environment UUID."},
+                "baseUrl": {"type": "string", "default": DEFAULT_API_BASE_URL},
+                "timeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 30, "default": 10},
+            },
+            "required": ["environmentId"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "hivewatch_probe_target",
         "description": "Run one explicit HiveWatch target probe candidate.",
         "inputSchema": {
@@ -170,6 +184,10 @@ def call_tool(tool_name: str, args: dict[str, Any]) -> str:
     if tool_name == "hivewatch_list_expected_set_templates":
         kind = require_string(args, "kind")
         path = "/api/v1/expected-set-templates?kind=" + urllib.parse.quote(kind)
+        return api_request("GET", path, None, args)
+    if tool_name == "hivewatch_list_environment_target_roles":
+        environment_id = require_string(args, "environmentId")
+        path = "/api/v1/environments/" + urllib.parse.quote(environment_id) + "/target-roles"
         return api_request("GET", path, None, args)
     if tool_name == "hivewatch_probe_target":
         return api_request("POST", "/api/v1/admin/target-probes", require_object(args, "probe"), args)

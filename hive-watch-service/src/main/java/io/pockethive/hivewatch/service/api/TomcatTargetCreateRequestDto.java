@@ -4,7 +4,7 @@ import java.util.UUID;
 
 public record TomcatTargetCreateRequestDto(
         UUID serverId,
-        TomcatRole role,
+        String role,
         String baseUrl,
         int port,
         String username,

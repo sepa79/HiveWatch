@@ -1,10 +1,7 @@
 package io.pockethive.hivewatch.service.tomcat;
 
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -19,9 +16,8 @@ public class TomcatTargetEntity {
     @Column(name = "server_id", nullable = false)
     private UUID serverId;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false)
-    private TomcatRole role;
+    private String role;
 
     @Column(name = "base_url", nullable = false)
     private String baseUrl;
@@ -50,7 +46,7 @@ public class TomcatTargetEntity {
     public TomcatTargetEntity(
             UUID id,
             UUID serverId,
-            TomcatRole role,
+            String role,
             String baseUrl,
             int port,
             String username,
@@ -79,7 +75,7 @@ public class TomcatTargetEntity {
         return serverId;
     }
 
-    public TomcatRole getRole() {
+    public String getRole() {
         return role;
     }
 

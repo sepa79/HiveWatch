@@ -4,12 +4,12 @@ import io.pockethive.hivewatch.service.api.ExpectedSetMode;
 import io.pockethive.hivewatch.service.api.ExpectedSetTemplateKind;
 import io.pockethive.hivewatch.service.api.TomcatExpectedWebappsSpecDto;
 import io.pockethive.hivewatch.service.api.TomcatExpectedWebappsSpecReplaceRequestDto;
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
 import io.pockethive.hivewatch.service.expectedsets.tomcat.TomcatExpectedWebappSpecEntity;
 import io.pockethive.hivewatch.service.expectedsets.tomcat.TomcatExpectedWebappSpecRepository;
+import io.pockethive.hivewatch.service.targetroles.EnvironmentTargetRoleService;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetEntity;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetRepository;
 import io.pockethive.hivewatch.service.tomcat.expected.TomcatExpectedWebappEntity;
@@ -39,6 +39,7 @@ public class TomcatExpectedWebappsSpecService {
     private final TomcatExpectedWebappSpecRepository specRepository;
     private final ExpectedSetTemplateRepository templateRepository;
     private final ExpectedSetTemplateItemRepository templateItemRepository;
+    private final EnvironmentTargetRoleService targetRoleService;
 
     public TomcatExpectedWebappsSpecService(
             EnvironmentRepository environmentRepository,
@@ -47,7 +48,8 @@ public class TomcatExpectedWebappsSpecService {
             TomcatExpectedWebappRepository explicitRepository,
             TomcatExpectedWebappSpecRepository specRepository,
             ExpectedSetTemplateRepository templateRepository,
-            ExpectedSetTemplateItemRepository templateItemRepository
+            ExpectedSetTemplateItemRepository templateItemRepository,
+            EnvironmentTargetRoleService targetRoleService
     ) {
         this.environmentRepository = environmentRepository;
         this.serverRepository = serverRepository;
@@ -56,6 +58,7 @@ public class TomcatExpectedWebappsSpecService {
         this.specRepository = specRepository;
         this.templateRepository = templateRepository;
         this.templateItemRepository = templateItemRepository;
+        this.targetRoleService = targetRoleService;
     }
 
     @Transactional(readOnly = true)
@@ -201,6 +204,7 @@ public class TomcatExpectedWebappsSpecService {
             if (s.serverId() == null) throw new ResponseStatusException(BAD_REQUEST, "serverId is required");
             if (!serverById.containsKey(s.serverId())) throw new ResponseStatusException(BAD_REQUEST, "serverId is not part of this environment: " + s.serverId());
             if (s.role() == null) throw new ResponseStatusException(BAD_REQUEST, "role is required");
+            targetRoleService.requireActiveRole(environmentId, s.role());
             if (s.mode() == null) throw new ResponseStatusException(BAD_REQUEST, "mode is required");
             if (s.mode() == ExpectedSetMode.UNCONFIGURED) throw new ResponseStatusException(BAD_REQUEST, "mode cannot be UNCONFIGURED");
 
@@ -261,13 +265,13 @@ public class TomcatExpectedWebappsSpecService {
         validateReplaceRequest(request);
         requireServer(environmentId, serverId);
 
-        Set<TomcatRole> allowedRoles = tomcatTargetRepository.findByServerIdIn(List.of(serverId)).stream()
+        Set<String> allowedRoles = tomcatTargetRepository.findByServerIdIn(List.of(serverId)).stream()
                 .map(TomcatTargetEntity::getRole)
                 .collect(java.util.stream.Collectors.toSet());
 
         List<TomcatExpectedWebappsSpecDto> specs = request.specs() == null ? List.of() : request.specs();
 
-        Set<TomcatRole> seen = new HashSet<>();
+        Set<String> seen = new HashSet<>();
         Set<UUID> referencedTemplateIds = new HashSet<>();
 
         for (TomcatExpectedWebappsSpecDto s : specs) {
@@ -275,6 +279,7 @@ public class TomcatExpectedWebappsSpecService {
             if (s.serverId() == null) throw new ResponseStatusException(BAD_REQUEST, "serverId is required");
             if (!s.serverId().equals(serverId)) throw new ResponseStatusException(BAD_REQUEST, "serverId must match path param");
             if (s.role() == null) throw new ResponseStatusException(BAD_REQUEST, "role is required");
+            targetRoleService.requireActiveRole(environmentId, s.role());
             if (!allowedRoles.isEmpty() && !allowedRoles.contains(s.role())) {
                 throw new ResponseStatusException(BAD_REQUEST, "role is not configured on this server: " + s.role());
             }
@@ -356,6 +361,6 @@ public class TomcatExpectedWebappsSpecService {
         }
     }
 
-    private record Key(UUID serverId, TomcatRole role) {
+    private record Key(UUID serverId, String role) {
     }
 }

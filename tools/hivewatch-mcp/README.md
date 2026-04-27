@@ -7,6 +7,7 @@ HiveWatch owns the provisioning DTOs, validation, apply behavior, audit, revisio
 ## Tools
 
 - `hivewatch_list_environments`
+- `hivewatch_list_environment_target_roles`
 - `hivewatch_list_expected_set_templates`
 - `hivewatch_probe_target`
 - `hivewatch_validate_environment_plan`

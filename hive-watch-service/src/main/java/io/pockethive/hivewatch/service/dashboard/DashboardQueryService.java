@@ -15,7 +15,6 @@ import io.pockethive.hivewatch.service.api.DashboardSectionDto;
 import io.pockethive.hivewatch.service.api.DashboardSectionKind;
 import io.pockethive.hivewatch.service.api.ExpectedSetMode;
 import io.pockethive.hivewatch.service.api.TomcatEnvironmentStatus;
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import io.pockethive.hivewatch.service.api.TomcatWebappDto;
 import io.pockethive.hivewatch.service.actuator.ActuatorTargetEntity;
 import io.pockethive.hivewatch.service.actuator.ActuatorTargetRepository;
@@ -36,6 +35,8 @@ import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
 import io.pockethive.hivewatch.service.security.EnvironmentVisibilityService;
+import io.pockethive.hivewatch.service.targetroles.EnvironmentTargetRoleEntity;
+import io.pockethive.hivewatch.service.targetroles.EnvironmentTargetRoleRepository;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetEntity;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetRepository;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetScanStateEntity;
@@ -57,12 +58,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DashboardQueryService {
-    private static final List<TomcatRoleColumn> TOMCAT_COLUMN_ORDER = List.of(
-            new TomcatRoleColumn(TomcatRole.SERVICES, "SERVICES", "Services"),
-            new TomcatRoleColumn(TomcatRole.AUTH, "AUTH", "Auth"),
-            new TomcatRoleColumn(TomcatRole.PAYMENTS, "PAYMENTS", "Payments")
-    );
-
     private static final Set<String> BUILT_IN_WEBAPPS = Set.of("/", "/manager", "/host-manager", "/docs", "/examples");
 
     private final ServerRepository serverRepository;
@@ -77,6 +72,7 @@ public class DashboardQueryService {
     private final ExpectedSetTemplateItemRepository expectedSetTemplateItemRepository;
     private final DecisionEngine decisionEngine;
     private final EnvironmentVisibilityService environmentVisibilityService;
+    private final EnvironmentTargetRoleRepository targetRoleRepository;
 
     public DashboardQueryService(
             ServerRepository serverRepository,
@@ -90,7 +86,8 @@ public class DashboardQueryService {
             DockerExpectedServiceRepository dockerExpectedServiceRepository,
             ExpectedSetTemplateItemRepository expectedSetTemplateItemRepository,
             DecisionEngine decisionEngine,
-            EnvironmentVisibilityService environmentVisibilityService
+            EnvironmentVisibilityService environmentVisibilityService,
+            EnvironmentTargetRoleRepository targetRoleRepository
     ) {
         this.serverRepository = serverRepository;
         this.tomcatTargetRepository = tomcatTargetRepository;
@@ -104,6 +101,7 @@ public class DashboardQueryService {
         this.expectedSetTemplateItemRepository = expectedSetTemplateItemRepository;
         this.decisionEngine = decisionEngine;
         this.environmentVisibilityService = environmentVisibilityService;
+        this.targetRoleRepository = targetRoleRepository;
     }
 
     @Transactional(readOnly = true)
@@ -111,6 +109,7 @@ public class DashboardQueryService {
         Instant now = Instant.now();
         List<EnvironmentEntity> environments = environmentVisibilityService.listVisibleEnvironments();
         List<UUID> envIds = environments.stream().map(EnvironmentEntity::getId).toList();
+        Map<UUID, List<TomcatRoleColumn>> roleColumnsByEnv = targetRoleColumnsByEnvironment(envIds);
 
         List<ServerEntity> servers = envIds.isEmpty() ? List.of() : serverRepository.findByEnvironmentIdIn(envIds);
         Map<UUID, ServerEntity> serverById = servers.stream()
@@ -277,6 +276,7 @@ public class DashboardQueryService {
                     env.getId(),
                     serversByEnv.getOrDefault(env.getId(), List.of()),
                     envTomcats,
+                    roleColumnsByEnv.getOrDefault(env.getId(), List.of()),
                     tomcatStateByTargetId,
                     tomcatExpectedSpecByServerRole,
                     explicitExpectedWebappsByServerRole,
@@ -298,6 +298,25 @@ public class DashboardQueryService {
 
         blocks.sort(Comparator.comparing(DashboardEnvironmentBlockDto::name));
         return new DashboardDto(List.copyOf(blocks));
+    }
+
+    private Map<UUID, List<TomcatRoleColumn>> targetRoleColumnsByEnvironment(List<UUID> environmentIds) {
+        if (environmentIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, List<EnvironmentTargetRoleEntity>> rolesByEnv = targetRoleRepository.findByEnvironmentIdIn(environmentIds).stream()
+                .collect(java.util.stream.Collectors.groupingBy(EnvironmentTargetRoleEntity::getEnvironmentId));
+        Map<UUID, List<TomcatRoleColumn>> result = new HashMap<>();
+        for (UUID environmentId : environmentIds) {
+            List<TomcatRoleColumn> columns = rolesByEnv.getOrDefault(environmentId, List.of()).stream()
+                    .sorted(Comparator.comparingInt(EnvironmentTargetRoleEntity::getSortOrder)
+                            .thenComparing(EnvironmentTargetRoleEntity::getLabel, String.CASE_INSENSITIVE_ORDER)
+                            .thenComparing(EnvironmentTargetRoleEntity::getCode, String.CASE_INSENSITIVE_ORDER))
+                    .map(role -> new TomcatRoleColumn(role.getCode(), role.getCode(), role.getLabel()))
+                    .toList();
+            result.put(environmentId, columns);
+        }
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -576,6 +595,7 @@ public class DashboardQueryService {
             UUID environmentId,
             List<ServerEntity> envServers,
             List<TomcatTargetEntity> envTargets,
+            List<TomcatRoleColumn> roleColumns,
             Map<UUID, TomcatTargetScanStateEntity> stateByTargetId,
             Map<ExpectedKey, ExpectedSetSpec> expectedSpecByServerRole,
             Map<ExpectedKey, Set<String>> explicitExpectedWebappsByServerRole,
@@ -590,7 +610,7 @@ public class DashboardQueryService {
         }
 
         List<DashboardColumnDto> columns = new ArrayList<>();
-        for (TomcatRoleColumn c : TOMCAT_COLUMN_ORDER) {
+        for (TomcatRoleColumn c : roleColumns) {
             columns.add(new DashboardColumnDto(c.key(), c.label()));
         }
         columns.add(new DashboardColumnDto("TOMCAT", "Tomcat"));
@@ -604,16 +624,16 @@ public class DashboardQueryService {
             ServerEntity server = serverById.get(serverId);
             String serverName = server == null ? "Unknown" : server.getName();
 
-            Map<TomcatRole, TomcatTargetEntity> byRole = new HashMap<>();
+            Map<String, TomcatTargetEntity> byRole = new HashMap<>();
             for (TomcatTargetEntity t : targets) {
                 byRole.put(t.getRole(), t);
             }
 
             List<DashboardCellDto> cells = new ArrayList<>();
-            for (TomcatRoleColumn c : TOMCAT_COLUMN_ORDER) {
+            for (TomcatRoleColumn c : roleColumns) {
                 TomcatTargetEntity t = byRole.get(c.role());
                 if (t == null) {
-                    cells.add(new DashboardCellDto(DashboardCellKind.ERROR, null, "Missing target: " + c.role().name()));
+                    cells.add(new DashboardCellDto(DashboardCellKind.ERROR, null, "Missing target: " + c.role()));
                     continue;
                 }
                 TomcatTargetScanStateEntity st = stateByTargetId.get(t.getId());
@@ -625,21 +645,21 @@ public class DashboardQueryService {
             }
 
             DashboardCellDto tomcatVersion = uniformStringCell(
-                    TOMCAT_COLUMN_ORDER.stream()
+                    roleColumns.stream()
                             .map(c -> byRole.get(c.role()))
                             .map(t -> t == null ? null : stateByTargetId.get(t.getId()))
                             .map(st -> st == null ? null : st.getTomcatVersion())
                             .toList()
             );
             DashboardCellDto javaVersion = uniformStringCell(
-                    TOMCAT_COLUMN_ORDER.stream()
+                    roleColumns.stream()
                             .map(c -> byRole.get(c.role()))
                             .map(t -> t == null ? null : stateByTargetId.get(t.getId()))
                             .map(st -> st == null ? null : st.getJavaVersion())
                             .toList()
             );
             DashboardCellDto os = uniformStringCell(
-                    TOMCAT_COLUMN_ORDER.stream()
+                    roleColumns.stream()
                             .map(c -> byRole.get(c.role()))
                             .map(t -> t == null ? null : stateByTargetId.get(t.getId()))
                             .map(st -> st == null ? null : st.getOs())
@@ -780,16 +800,16 @@ public class DashboardQueryService {
         return DashboardRowStatus.OK;
     }
 
-    private static DashboardCellDto tomcatRoleCell(TomcatRole role, TomcatTargetScanStateEntity st, Set<String> expectedPaths) {
+    private static DashboardCellDto tomcatRoleCell(String role, TomcatTargetScanStateEntity st, Set<String> expectedPaths) {
         if (st == null) {
             if (expectedPaths != null && !expectedPaths.isEmpty()) {
                 String title = "Missing expected webapps: " + String.join(", ", expectedPaths.stream().limit(6).toList());
-                return new DashboardCellDto(DashboardCellKind.ERROR, null, role.name() + " mismatch: " + title);
+                return new DashboardCellDto(DashboardCellKind.ERROR, null, role + " mismatch: " + title);
             }
             return new DashboardCellDto(DashboardCellKind.UNKNOWN, null, null);
         }
         if (st.getOutcomeKind() != io.pockethive.hivewatch.service.api.TomcatScanOutcomeKind.SUCCESS) {
-            String title = role.name() + " error: " + (st.getErrorKind() == null ? "UNKNOWN" : st.getErrorKind().name())
+            String title = role + " error: " + (st.getErrorKind() == null ? "UNKNOWN" : st.getErrorKind().name())
                     + ": " + (st.getErrorMessage() == null ? "Request failed" : st.getErrorMessage());
             return new DashboardCellDto(DashboardCellKind.ERROR, null, title);
         }
@@ -810,7 +830,7 @@ public class DashboardQueryService {
                     .toList();
             if (!missingExpected.isEmpty()) {
                 String title = "Missing expected webapps: " + String.join(", ", missingExpected.stream().limit(6).toList());
-                return new DashboardCellDto(DashboardCellKind.ERROR, null, role.name() + " mismatch: " + title);
+                return new DashboardCellDto(DashboardCellKind.ERROR, null, role + " mismatch: " + title);
             }
         }
 
@@ -831,13 +851,13 @@ public class DashboardQueryService {
 
         if (!missing.isEmpty()) {
             String title = "Missing webapp versions: " + String.join(", ", missing.stream().limit(6).toList());
-            return new DashboardCellDto(DashboardCellKind.ERROR, null, role.name() + " mismatch: " + title);
+            return new DashboardCellDto(DashboardCellKind.ERROR, null, role + " mismatch: " + title);
         }
         if (versions.size() == 1) {
             return new DashboardCellDto(DashboardCellKind.VALUE, versions.iterator().next(), null);
         }
         String title = "Multiple webapp versions: " + String.join(", ", versions);
-        return new DashboardCellDto(DashboardCellKind.ERROR, null, role.name() + " mismatch: " + title);
+        return new DashboardCellDto(DashboardCellKind.ERROR, null, role + " mismatch: " + title);
     }
 
     private static DashboardCellDto dockerServiceCell(String profile, ActuatorTargetScanStateEntity st) {
@@ -870,10 +890,10 @@ public class DashboardQueryService {
         return new DashboardCellDto(DashboardCellKind.ERROR, null, "Multiple values: " + String.join(" · ", uniq));
     }
 
-    private record TomcatRoleColumn(TomcatRole role, String key, String label) {
+    private record TomcatRoleColumn(String role, String key, String label) {
     }
 
-    private record ExpectedKey(UUID serverId, TomcatRole role) {
+    private record ExpectedKey(UUID serverId, String role) {
     }
 
     private record ExpectedSetSpec(ExpectedSetMode mode, UUID templateId) {

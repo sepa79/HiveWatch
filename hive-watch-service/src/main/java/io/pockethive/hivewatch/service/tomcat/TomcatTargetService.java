@@ -10,6 +10,7 @@ import io.pockethive.hivewatch.service.api.TomcatWebappDto;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
+import io.pockethive.hivewatch.service.targetroles.EnvironmentTargetRoleService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -28,17 +29,20 @@ public class TomcatTargetService {
     private final ServerRepository serverRepository;
     private final TomcatTargetRepository tomcatTargetRepository;
     private final TomcatTargetScanStateRepository tomcatTargetScanStateRepository;
+    private final EnvironmentTargetRoleService targetRoleService;
 
     public TomcatTargetService(
             EnvironmentRepository environmentRepository,
             ServerRepository serverRepository,
             TomcatTargetRepository tomcatTargetRepository,
-            TomcatTargetScanStateRepository tomcatTargetScanStateRepository
+            TomcatTargetScanStateRepository tomcatTargetScanStateRepository,
+            EnvironmentTargetRoleService targetRoleService
     ) {
         this.environmentRepository = environmentRepository;
         this.serverRepository = serverRepository;
         this.tomcatTargetRepository = tomcatTargetRepository;
         this.tomcatTargetScanStateRepository = tomcatTargetScanStateRepository;
+        this.targetRoleService = targetRoleService;
     }
 
     @Transactional(readOnly = true)
@@ -77,13 +81,15 @@ public class TomcatTargetService {
         if (!serverRepository.existsByIdAndEnvironmentId(serverId, environmentId)) {
             throw new ResponseStatusException(BAD_REQUEST, "serverId is not part of this environment");
         }
+        String role = EnvironmentTargetRoleService.sanitizeCode(request.role());
+        targetRoleService.requireActiveRole(environmentId, role);
         ServerEntity server = serverRepository.findById(serverId).orElse(null);
 
         UUID id = UUID.randomUUID();
         TomcatTargetEntity created = tomcatTargetRepository.save(new TomcatTargetEntity(
                 id,
                 serverId,
-                request.role(),
+                role,
                 request.baseUrl().trim(),
                 request.port(),
                 request.username().trim(),
@@ -112,13 +118,15 @@ public class TomcatTargetService {
         if (!serverRepository.existsByIdAndEnvironmentId(request.serverId(), environmentId)) {
             throw new ResponseStatusException(BAD_REQUEST, "serverId is not part of this environment");
         }
+        String role = EnvironmentTargetRoleService.sanitizeCode(request.role());
+        targetRoleService.requireActiveRole(environmentId, role);
         ServerEntity server = serverRepository.findById(request.serverId())
                 .orElseThrow(() -> new IllegalStateException("Server not found"));
 
         TomcatTargetEntity updated = tomcatTargetRepository.save(new TomcatTargetEntity(
                 existing.getId(),
                 request.serverId(),
-                request.role(),
+                role,
                 request.baseUrl().trim(),
                 request.port(),
                 request.username().trim(),

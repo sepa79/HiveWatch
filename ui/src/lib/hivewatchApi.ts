@@ -70,8 +70,18 @@ export type Dashboard = {
 
 export type TomcatScanOutcomeKind = 'SUCCESS' | 'ERROR'
 export type TomcatScanErrorKind = 'AUTH' | 'CONNECTIVITY' | 'TIMEOUT' | 'HTTP' | 'PARSE' | 'UNKNOWN'
-export type TomcatRole = 'PAYMENTS' | 'SERVICES' | 'AUTH'
-export type TargetAdapterType = 'TOMCAT_MANAGER_HTML' | 'ACTUATOR_HTTP'
+export type TomcatRole = string
+
+export type EnvironmentTargetRole = {
+  code: string
+  label: string
+  sortOrder: number
+  active: boolean
+}
+
+export type EnvironmentTargetRoleReplaceRequest = {
+  roles: EnvironmentTargetRole[]
+}
 
 export type TomcatTargetState = {
   scannedAt: string
@@ -92,17 +102,6 @@ export type TomcatWebapp = {
 
 export type ExpectedSetMode = 'UNCONFIGURED' | 'EXPLICIT' | 'TEMPLATE'
 export type ExpectedSetTemplateKind = 'TOMCAT_WEBAPP_PATH' | 'DOCKER_SERVICE_PROFILE'
-export type ProvisioningChangeMode = 'CREATE' | 'EXISTING'
-export type ProvisioningExpectedSetChangeMode = 'NO_CHANGE' | 'REPLACE'
-export type ProvisioningPlanDiffAction = 'CREATE' | 'REFERENCE' | 'REPLACE'
-export type ProvisioningPlanObjectType =
-  | 'ENVIRONMENT'
-  | 'SERVER'
-  | 'TOMCAT_TARGET'
-  | 'ACTUATOR_TARGET'
-  | 'TOMCAT_EXPECTED_WEBAPPS'
-  | 'DOCKER_EXPECTED_SERVICES'
-export type ProvisioningPlanIssueSeverity = 'ERROR' | 'WARNING'
 
 export type ExpectedSetTemplate = {
   id: string
@@ -139,125 +138,6 @@ export type DockerExpectedServicesSpec = {
 
 export type DockerExpectedServicesSpecReplaceRequest = {
   specs: DockerExpectedServicesSpec[]
-}
-
-export type ProvisioningEnvironment = {
-  mode: ProvisioningChangeMode
-  environmentId: string | null
-  name: string
-}
-
-export type ProvisioningTomcatTarget = {
-  role: TomcatRole
-  adapterType: 'TOMCAT_MANAGER_HTML'
-  baseUrl: string
-  port: number
-  username: string
-  password: string
-  connectTimeoutMs: number
-  requestTimeoutMs: number
-}
-
-export type ProvisioningActuatorTarget = {
-  role: TomcatRole
-  adapterType: 'ACTUATOR_HTTP'
-  baseUrl: string
-  port: number
-  profile: string
-  connectTimeoutMs: number
-  requestTimeoutMs: number
-}
-
-export type ProvisioningTomcatExpectedWebappsSpec = {
-  role: TomcatRole
-  mode: Exclude<ExpectedSetMode, 'UNCONFIGURED'>
-  templateId: string | null
-  items: string[]
-}
-
-export type ProvisioningTomcatExpectedWebapps = {
-  changeMode: ProvisioningExpectedSetChangeMode
-  specs: ProvisioningTomcatExpectedWebappsSpec[]
-}
-
-export type ProvisioningDockerExpectedServicesSpec = {
-  mode: Exclude<ExpectedSetMode, 'UNCONFIGURED'>
-  templateId: string | null
-  items: string[]
-}
-
-export type ProvisioningDockerExpectedServices = {
-  changeMode: ProvisioningExpectedSetChangeMode
-  specs: ProvisioningDockerExpectedServicesSpec[]
-}
-
-export type ProvisioningServer = {
-  clientRef: string
-  mode: ProvisioningChangeMode
-  serverId: string | null
-  name: string
-  tomcatTargets: ProvisioningTomcatTarget[]
-  actuatorTargets: ProvisioningActuatorTarget[]
-  tomcatExpectedWebapps: ProvisioningTomcatExpectedWebapps
-  dockerExpectedServices: ProvisioningDockerExpectedServices
-}
-
-export type EnvironmentProvisioningPlan = {
-  source: string
-  correlationId: string | null
-  reason: string | null
-  environment: ProvisioningEnvironment
-  servers: ProvisioningServer[]
-}
-
-export type ProvisioningPlanIssue = {
-  severity: ProvisioningPlanIssueSeverity
-  path: string
-  message: string
-}
-
-export type ProvisioningPlanDiff = {
-  action: ProvisioningPlanDiffAction
-  objectType: ProvisioningPlanObjectType
-  clientRef: string | null
-  label: string
-}
-
-export type ProvisioningPlanValidationResult = {
-  valid: boolean
-  errors: ProvisioningPlanIssue[]
-  warnings: ProvisioningPlanIssue[]
-  diff: ProvisioningPlanDiff[]
-}
-
-export type ProvisioningPlanApplyRequest = {
-  plan: EnvironmentProvisioningPlan
-  scanAfterApply: boolean
-}
-
-export type ProvisioningApplySummary = {
-  environmentsCreated: number
-  serversCreated: number
-  tomcatTargetsCreated: number
-  actuatorTargetsCreated: number
-  tomcatExpectedWebappSpecsApplied: number
-  tomcatExpectedWebappItemsApplied: number
-  dockerExpectedServiceSpecsApplied: number
-  dockerExpectedServiceItemsApplied: number
-}
-
-export type ProvisioningAppliedObject = {
-  objectType: ProvisioningPlanObjectType
-  clientRef: string | null
-  id: string
-  label: string
-}
-
-export type ProvisioningPlanApplyResult = {
-  environmentId: string
-  summary: ProvisioningApplySummary
-  objects: ProvisioningAppliedObject[]
-  validation: ProvisioningPlanValidationResult
 }
 
 export type TomcatTarget = {
@@ -317,46 +197,6 @@ export type ActuatorTargetCreateRequest = {
   profile: string
   connectTimeoutMs: number
   requestTimeoutMs: number
-}
-
-export type TargetProbeRequest = {
-  adapterType: TargetAdapterType
-  baseUrl: string
-  port: number
-  username: string | null
-  password: string | null
-  profile: string | null
-  connectTimeoutMs: number
-  requestTimeoutMs: number
-}
-
-export type TomcatManagerHtmlProbeObserved = {
-  adapterType: 'TOMCAT_MANAGER_HTML'
-  tomcatVersion: string | null
-  javaVersion: string | null
-  os: string | null
-  webapps: TomcatWebapp[]
-}
-
-export type ActuatorHttpProbeObserved = {
-  adapterType: 'ACTUATOR_HTTP'
-  healthStatus: string | null
-  appName: string | null
-  buildVersion: string | null
-  cpuUsage: number | null
-  memoryUsedBytes: number | null
-}
-
-export type TargetProbeResult = {
-  adapterType: TargetAdapterType
-  outcomeKind: TomcatScanOutcomeKind
-  errorKind: TomcatScanErrorKind | null
-  errorMessage: string | null
-  observed: TomcatManagerHtmlProbeObserved | ActuatorHttpProbeObserved | null
-  candidate: {
-    baseUrl: string
-    port: number
-  }
 }
 
 export type Server = {
@@ -497,6 +337,29 @@ export async function fetchExpectedSetTemplates(
   return readJsonOrThrow<ExpectedSetTemplate[]>(response)
 }
 
+export async function fetchEnvironmentTargetRoles(
+  environmentId: string,
+  signal?: AbortSignal,
+): Promise<EnvironmentTargetRole[]> {
+  const response = await fetch(`/api/v1/environments/${encodeURIComponent(environmentId)}/target-roles`, {
+    signal,
+    headers: withDevAuthHeaders(),
+  })
+  return readJsonOrThrow<EnvironmentTargetRole[]>(response)
+}
+
+export async function replaceEnvironmentTargetRoles(
+  environmentId: string,
+  request: EnvironmentTargetRoleReplaceRequest,
+  signal?: AbortSignal,
+): Promise<EnvironmentTargetRole[]> {
+  return putJsonOrThrow<EnvironmentTargetRole[]>(
+    `/api/v1/admin/environments/${encodeURIComponent(environmentId)}/target-roles`,
+    request,
+    signal,
+  )
+}
+
 export async function createExpectedSetTemplate(
   request: ExpectedSetTemplateCreateRequest,
   signal?: AbortSignal,
@@ -598,20 +461,6 @@ export async function replaceServerDockerExpectedServicesSpec(
     request,
     signal,
   )
-}
-
-export async function validateEnvironmentProvisioningPlan(
-  plan: EnvironmentProvisioningPlan,
-  signal?: AbortSignal,
-): Promise<ProvisioningPlanValidationResult> {
-  return postJsonOrThrow<ProvisioningPlanValidationResult>('/api/v1/admin/environment-provisioning/plans/validate', plan, signal)
-}
-
-export async function applyEnvironmentProvisioningPlan(
-  request: ProvisioningPlanApplyRequest,
-  signal?: AbortSignal,
-): Promise<ProvisioningPlanApplyResult> {
-  return postJsonOrThrow<ProvisioningPlanApplyResult>('/api/v1/admin/environment-provisioning/plans/apply', request, signal)
 }
 
 export async function fetchServers(environmentId: string, signal?: AbortSignal): Promise<Server[]> {
@@ -741,10 +590,6 @@ export async function createActuatorTarget(
   signal?: AbortSignal,
 ): Promise<ActuatorTarget> {
   return postJsonOrThrow<ActuatorTarget>(`/api/v1/environments/${encodeURIComponent(environmentId)}/actuator-targets`, request, signal)
-}
-
-export async function probeTarget(request: TargetProbeRequest, signal?: AbortSignal): Promise<TargetProbeResult> {
-  return postJsonOrThrow<TargetProbeResult>('/api/v1/admin/target-probes', request, signal)
 }
 
 export async function updateActuatorTarget(

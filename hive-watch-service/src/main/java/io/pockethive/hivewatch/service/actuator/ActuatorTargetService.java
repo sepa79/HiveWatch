@@ -9,6 +9,7 @@ import io.pockethive.hivewatch.service.api.TomcatScanOutcomeKind;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
 import io.pockethive.hivewatch.service.environments.servers.ServerRepository;
+import io.pockethive.hivewatch.service.targetroles.EnvironmentTargetRoleService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -27,17 +28,20 @@ public class ActuatorTargetService {
     private final ServerRepository serverRepository;
     private final ActuatorTargetRepository actuatorTargetRepository;
     private final ActuatorTargetScanStateRepository actuatorTargetScanStateRepository;
+    private final EnvironmentTargetRoleService targetRoleService;
 
     public ActuatorTargetService(
             EnvironmentRepository environmentRepository,
             ServerRepository serverRepository,
             ActuatorTargetRepository actuatorTargetRepository,
-            ActuatorTargetScanStateRepository actuatorTargetScanStateRepository
+            ActuatorTargetScanStateRepository actuatorTargetScanStateRepository,
+            EnvironmentTargetRoleService targetRoleService
     ) {
         this.environmentRepository = environmentRepository;
         this.serverRepository = serverRepository;
         this.actuatorTargetRepository = actuatorTargetRepository;
         this.actuatorTargetScanStateRepository = actuatorTargetScanStateRepository;
+        this.targetRoleService = targetRoleService;
     }
 
     @Transactional(readOnly = true)
@@ -96,12 +100,14 @@ public class ActuatorTargetService {
         if (!serverRepository.existsByIdAndEnvironmentId(serverId, environmentId)) {
             throw new ResponseStatusException(BAD_REQUEST, "serverId is not part of this environment");
         }
+        String role = EnvironmentTargetRoleService.sanitizeCode(request.role());
+        targetRoleService.requireActiveRole(environmentId, role);
         ServerEntity server = serverRepository.findById(serverId).orElse(null);
 
         ActuatorTargetEntity created = actuatorTargetRepository.save(new ActuatorTargetEntity(
                 UUID.randomUUID(),
                 serverId,
-                request.role(),
+                role,
                 request.baseUrl().trim(),
                 request.port(),
                 request.profile().trim(),
@@ -128,13 +134,15 @@ public class ActuatorTargetService {
         if (!serverRepository.existsByIdAndEnvironmentId(request.serverId(), environmentId)) {
             throw new ResponseStatusException(BAD_REQUEST, "serverId is not part of this environment");
         }
+        String role = EnvironmentTargetRoleService.sanitizeCode(request.role());
+        targetRoleService.requireActiveRole(environmentId, role);
         ServerEntity server = serverRepository.findById(request.serverId())
                 .orElseThrow(() -> new IllegalStateException("Server not found"));
 
         ActuatorTargetEntity updated = actuatorTargetRepository.save(new ActuatorTargetEntity(
                 existing.getId(),
                 request.serverId(),
-                request.role(),
+                role,
                 request.baseUrl().trim(),
                 request.port(),
                 request.profile().trim(),

@@ -29,7 +29,7 @@ public class DecisionEngine {
                         t.targetId(),
                         t.serverName(),
                         t.role(),
-                        "Tomcat " + t.role().name().toLowerCase(),
+                        "Tomcat " + t.role(),
                         "Not scanned"
                 ));
                 continue;
@@ -41,7 +41,7 @@ public class DecisionEngine {
                         t.targetId(),
                         t.serverName(),
                         t.role(),
-                        "Tomcat " + t.role().name().toLowerCase(),
+                        "Tomcat " + t.role(),
                         (t.errorKind() == null ? "ERROR" : t.errorKind().name()) + ": " + (t.errorMessage() == null ? "Unknown error" : t.errorMessage())
                 ));
             }

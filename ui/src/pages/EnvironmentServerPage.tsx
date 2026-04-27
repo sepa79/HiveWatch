@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   createActuatorTarget,
@@ -8,11 +8,11 @@ import {
   deleteServer,
   fetchExpectedSetTemplates,
   fetchActuatorTargets,
+  fetchEnvironmentTargetRoles,
   fetchServerDockerExpectedServicesSpec,
   fetchServerTomcatExpectedWebappsSpecs,
   fetchServers,
   fetchTomcatTargets,
-  probeTarget,
   replaceServerDockerExpectedServicesSpec,
   replaceServerTomcatExpectedWebappsSpecs,
   updateActuatorTarget,
@@ -21,6 +21,7 @@ import {
   type ActuatorTarget,
   type ActuatorTargetCreateRequest,
   type DockerExpectedServicesSpec,
+  type EnvironmentTargetRole,
   type ExpectedSetMode,
   type ExpectedSetTemplate,
   type Server,
@@ -28,7 +29,6 @@ import {
   type TomcatExpectedWebappsSpec,
   type TomcatTarget,
   type TomcatTargetCreateRequest,
-  type TargetProbeResult,
 } from '../lib/hivewatchApi'
 
 type LoadState =
@@ -42,8 +42,13 @@ type LoadState =
       dockerExpected: DockerExpectedServicesSpec
       tomcatTemplates: ExpectedSetTemplate[]
       dockerTemplates: ExpectedSetTemplate[]
+      targetRoles: EnvironmentTargetRole[]
     }
   | { kind: 'error'; message: string }
+
+type ServerTab = 'tomcats' | 'microservices'
+type TomcatTargetModal = { kind: 'add' } | { kind: 'edit'; targetId: string }
+type ActuatorTargetModal = { kind: 'add' } | { kind: 'edit'; targetId: string }
 
 function formatTs(iso: string | null): string {
   if (!iso) return '—'
@@ -52,28 +57,8 @@ function formatTs(iso: string | null): string {
   return date.toLocaleString()
 }
 
-function roleLabel(role: TomcatRole) {
-  const labels: Record<TomcatRole, string> = {
-    PAYMENTS: 'payments',
-    SERVICES: 'services',
-    AUTH: 'auth',
-  }
-  return labels[role]
-}
-
-function probeMessage(result: TargetProbeResult): string {
-  if (result.outcomeKind === 'ERROR') {
-    return `Probe failed: ${result.errorKind ?? 'UNKNOWN'}${result.errorMessage ? ` - ${result.errorMessage}` : ''}`
-  }
-  const observed = result.observed
-  if (!observed) return 'Probe OK'
-  if (observed.adapterType === 'TOMCAT_MANAGER_HTML') {
-    const version = observed.tomcatVersion ? `, Tomcat ${observed.tomcatVersion}` : ''
-    return `Probe OK: ${observed.webapps.length} webapps${version}`
-  }
-  const app = observed.appName ? `, ${observed.appName}` : ''
-  const version = observed.buildVersion ? ` ${observed.buildVersion}` : ''
-  return `Probe OK: ${observed.healthStatus ?? 'UNKNOWN'}${app}${version}`
+function roleLabel(role: TomcatRole, targetRoles: EnvironmentTargetRole[] = []) {
+  return targetRoles.find((candidate) => candidate.code === role)?.label ?? role
 }
 
 function parseLines(raw: string): string[] {
@@ -81,14 +66,88 @@ function parseLines(raw: string): string[] {
   const result: string[] = []
   raw
     .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-    .forEach((l) => {
-      if (seen.has(l)) return
-      seen.add(l)
-      result.push(l)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .forEach((line) => {
+      if (seen.has(line)) return
+      seen.add(line)
+      result.push(line)
     })
   return result
+}
+
+function defaultTomcatForm(serverId: string): TomcatTargetCreateRequest {
+  return {
+    serverId,
+    role: '',
+    baseUrl: 'http://hc-dummy-nft-01-touchpoint-tomcats',
+    port: 8081,
+    username: 'hc-manager',
+    password: 'hc-manager-pass',
+    connectTimeoutMs: 1500,
+    requestTimeoutMs: 5000,
+  }
+}
+
+function defaultActuatorForm(serverId: string): ActuatorTargetCreateRequest {
+  return {
+    serverId,
+    role: '',
+    baseUrl: 'http://hc-dummy-nft-01-docker-swarm-microservices',
+    port: 8080,
+    profile: 'payments',
+    connectTimeoutMs: 1500,
+    requestTimeoutMs: 5000,
+  }
+}
+
+function emptyDockerExpected(serverId: string): DockerExpectedServicesSpec {
+  return {
+    serverId,
+    mode: 'UNCONFIGURED',
+    templateId: null,
+    items: [],
+  }
+}
+
+function defaultTomcatExpected(serverId: string, role: TomcatRole): TomcatExpectedWebappsSpec {
+  return {
+    serverId,
+    role,
+    mode: 'UNCONFIGURED',
+    templateId: null,
+    items: [],
+  }
+}
+
+function upsertTomcatExpected(
+  current: TomcatExpectedWebappsSpec[],
+  nextSpec: TomcatExpectedWebappsSpec,
+  previousRole: TomcatRole,
+): TomcatExpectedWebappsSpec[] {
+  const next = current.filter((spec) => spec.role !== previousRole && spec.role !== nextSpec.role)
+  if (nextSpec.mode !== 'UNCONFIGURED') {
+    next.push(nextSpec)
+  }
+  return next.sort((a, b) => a.role.localeCompare(b.role))
+}
+
+function expectedTemplateName(templates: ExpectedSetTemplate[], templateId: string | null): string {
+  if (!templateId) return '—'
+  return templates.find((template) => template.id === templateId)?.name ?? templateId
+}
+
+function tomcatExpectedSummary(spec: TomcatExpectedWebappsSpec | null, templates: ExpectedSetTemplate[]): string {
+  if (!spec || spec.mode === 'UNCONFIGURED') return 'Disabled'
+  if (spec.mode === 'TEMPLATE') return `Template: ${expectedTemplateName(templates, spec.templateId)}`
+  return spec.items.length === 0 ? 'No webapps' : spec.items.join(', ')
+}
+
+function dockerExpectedSummary(expected: DockerExpectedServicesSpec, profile: string, templates: ExpectedSetTemplate[]): string {
+  if (expected.mode === 'UNCONFIGURED') return 'No'
+  if (!expected.items.includes(profile)) return 'No'
+  if (expected.mode === 'TEMPLATE') return `Yes (${expectedTemplateName(templates, expected.templateId)})`
+  return 'Yes'
 }
 
 export function EnvironmentServerPage() {
@@ -100,102 +159,34 @@ export function EnvironmentServerPage() {
   const serverId = (params.serverId ?? '').trim()
 
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
+  const [activeTab, setActiveTab] = useState<ServerTab>('tomcats')
 
   const [editingServer, setEditingServer] = useState(false)
   const [serverNameDraft, setServerNameDraft] = useState('')
   const [savingServerName, setSavingServerName] = useState(false)
 
-  const [editingTomcatTargetId, setEditingTomcatTargetId] = useState<string | null>(null)
-  const [tomcatEditForm, setTomcatEditForm] = useState<TomcatTargetCreateRequest | null>(null)
-  const [savingTomcatEdit, setSavingTomcatEdit] = useState(false)
+  const [tomcatModal, setTomcatModal] = useState<TomcatTargetModal | null>(null)
+  const [tomcatForm, setTomcatForm] = useState<TomcatTargetCreateRequest>(() => defaultTomcatForm(serverId))
+  const [savingTomcat, setSavingTomcat] = useState(false)
 
-  const [editingActuatorTargetId, setEditingActuatorTargetId] = useState<string | null>(null)
-  const [actuatorEditForm, setActuatorEditForm] = useState<ActuatorTargetCreateRequest | null>(null)
-  const [savingActuatorEdit, setSavingActuatorEdit] = useState(false)
-
-  const [savingTomcatCreate, setSavingTomcatCreate] = useState(false)
-  const [savingActuatorCreate, setSavingActuatorCreate] = useState(false)
-  const [probingTomcat, setProbingTomcat] = useState(false)
-  const [probingActuator, setProbingActuator] = useState(false)
-  const [tomcatProbeResult, setTomcatProbeResult] = useState<string | null>(null)
-  const [actuatorProbeResult, setActuatorProbeResult] = useState<string | null>(null)
+  const [actuatorModal, setActuatorModal] = useState<ActuatorTargetModal | null>(null)
+  const [actuatorForm, setActuatorForm] = useState<ActuatorTargetCreateRequest>(() => defaultActuatorForm(serverId))
+  const [actuatorExpected, setActuatorExpected] = useState(true)
+  const [savingActuator, setSavingActuator] = useState(false)
 
   const [expectedTomcatDraft, setExpectedTomcatDraft] = useState<TomcatExpectedWebappsSpec[]>([])
-  const [expectedDockerDraft, setExpectedDockerDraft] = useState<DockerExpectedServicesSpec | null>(null)
-  const [savingExpectedTomcat, setSavingExpectedTomcat] = useState(false)
-  const [savingExpectedDocker, setSavingExpectedDocker] = useState(false)
+  const [expectedTomcatForm, setExpectedTomcatForm] = useState<TomcatExpectedWebappsSpec>({
+    serverId,
+    role: '',
+    mode: 'UNCONFIGURED',
+    templateId: null,
+    items: [],
+  })
+  const [expectedTomcatItemsText, setExpectedTomcatItemsText] = useState('')
   const [expectedTomcatError, setExpectedTomcatError] = useState<string | null>(null)
+
+  const [expectedDockerDraft, setExpectedDockerDraft] = useState<DockerExpectedServicesSpec>(() => emptyDockerExpected(serverId))
   const [expectedDockerError, setExpectedDockerError] = useState<string | null>(null)
-
-  const [tomcatForm, setTomcatForm] = useState<TomcatTargetCreateRequest>({
-    serverId,
-    role: 'PAYMENTS',
-    baseUrl: 'http://hc-dummy-nft-01-touchpoint-tomcats',
-    port: 8081,
-    username: 'hc-manager',
-    password: 'hc-manager-pass',
-    connectTimeoutMs: 1500,
-    requestTimeoutMs: 5000,
-  })
-
-  const [actuatorForm, setActuatorForm] = useState<ActuatorTargetCreateRequest>({
-    serverId,
-    role: 'PAYMENTS',
-    baseUrl: 'http://hc-dummy-nft-01-docker-swarm-microservices',
-    port: 8080,
-    profile: 'payments',
-    connectTimeoutMs: 1500,
-    requestTimeoutMs: 5000,
-  })
-
-  useEffect(() => {
-    setTomcatForm((f) => ({ ...f, serverId }))
-    setActuatorForm((f) => ({ ...f, serverId }))
-  }, [serverId])
-
-  const probeTomcat = (request: TomcatTargetCreateRequest) => {
-    const controller = new AbortController()
-    setProbingTomcat(true)
-    setTomcatProbeResult(null)
-    probeTarget(
-      {
-        adapterType: 'TOMCAT_MANAGER_HTML',
-        baseUrl: request.baseUrl,
-        port: request.port,
-        username: request.username,
-        password: request.password,
-        profile: null,
-        connectTimeoutMs: request.connectTimeoutMs,
-        requestTimeoutMs: request.requestTimeoutMs,
-      },
-      controller.signal,
-    )
-      .then((result) => setTomcatProbeResult(probeMessage(result)))
-      .catch((e) => setTomcatProbeResult(`Probe failed: ${e instanceof Error ? e.message : 'Request failed'}`))
-      .finally(() => setProbingTomcat(false))
-  }
-
-  const probeActuator = (request: ActuatorTargetCreateRequest) => {
-    const controller = new AbortController()
-    setProbingActuator(true)
-    setActuatorProbeResult(null)
-    probeTarget(
-      {
-        adapterType: 'ACTUATOR_HTTP',
-        baseUrl: request.baseUrl,
-        port: request.port,
-        username: null,
-        password: null,
-        profile: request.profile,
-        connectTimeoutMs: request.connectTimeoutMs,
-        requestTimeoutMs: request.requestTimeoutMs,
-      },
-      controller.signal,
-    )
-      .then((result) => setActuatorProbeResult(probeMessage(result)))
-      .catch((e) => setActuatorProbeResult(`Probe failed: ${e instanceof Error ? e.message : 'Request failed'}`))
-      .finally(() => setProbingActuator(false))
-  }
 
   const refresh = useCallback(
     (signal?: AbortSignal) => {
@@ -212,25 +203,30 @@ export function EnvironmentServerPage() {
         fetchServerDockerExpectedServicesSpec(environmentId, serverId, signal),
         fetchExpectedSetTemplates('TOMCAT_WEBAPP_PATH', signal),
         fetchExpectedSetTemplates('DOCKER_SERVICE_PROFILE', signal),
+        fetchEnvironmentTargetRoles(environmentId, signal),
       ])
-        .then(([servers, tomcats, microservices, tomcatExpected, dockerExpected, tomcatTemplates, dockerTemplates]) => {
+        .then(([servers, tomcats, microservices, tomcatExpected, dockerExpected, tomcatTemplates, dockerTemplates, targetRoles]) => {
           const srv = servers.find((s) => s.id === serverId)
           if (!srv) {
             setState({ kind: 'error', message: 'Server not found' })
             return
           }
+          const serverTomcats = tomcats.filter((t) => t.serverId === serverId)
+          const serverMicroservices = microservices.filter((t) => t.serverId === serverId)
+
           setState({
             kind: 'ready',
             server: srv,
-            tomcats: tomcats.filter((t) => t.serverId === serverId),
-            microservices: microservices.filter((t) => t.serverId === serverId),
+            tomcats: serverTomcats,
+            microservices: serverMicroservices,
             tomcatExpected,
             dockerExpected,
             tomcatTemplates,
             dockerTemplates,
+            targetRoles,
           })
           setServerNameDraft(srv.name)
-          setExpectedTomcatDraft(tomcatExpected)
+          setExpectedTomcatDraft(tomcatExpected.filter((spec) => spec.mode !== 'UNCONFIGURED'))
           setExpectedDockerDraft(dockerExpected)
           setExpectedTomcatError(null)
           setExpectedDockerError(null)
@@ -247,50 +243,170 @@ export function EnvironmentServerPage() {
   }, [refresh])
 
   useEffect(() => {
-    if (location.hash !== '#expected-sets') return
-    const el = document.getElementById('expected-sets')
-    if (!el) return
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (location.hash === '#microservices') setActiveTab('microservices')
+    if (location.hash === '#tomcats' || location.hash === '#expected-sets') setActiveTab('tomcats')
   }, [location.hash])
 
   const title = useMemo(() => {
-    if (state.kind === 'ready') return `Server · ${state.server.name} · ${state.tomcats.length} Tomcats · ${state.microservices.length} microservices`
+    if (state.kind === 'ready') return `Server · ${state.server.name}`
     return 'Server'
   }, [state])
 
-  const updateTomcatExpected = (role: TomcatRole, patch: Partial<TomcatExpectedWebappsSpec>) => {
-    setExpectedTomcatDraft((prev) => prev.map((s) => (s.role === role ? { ...s, ...patch } : s)))
+  const openAddTomcat = () => {
+    const usedRoles = state.kind === 'ready' ? new Set(state.tomcats.map((target) => target.role)) : new Set<TomcatRole>()
+    const configuredRoles = state.kind === 'ready' ? state.targetRoles.filter((role) => role.active) : []
+    const firstRole = configuredRoles.find((role) => !usedRoles.has(role.code))?.code
+    if (!firstRole) {
+      window.alert('Configure an active target role first.')
+      return
+    }
+    const expected = expectedTomcatDraft.find((spec) => spec.role === firstRole) ?? defaultTomcatExpected(serverId, firstRole)
+    setTomcatForm({ ...defaultTomcatForm(serverId), role: firstRole })
+    setExpectedTomcatForm(expected)
+    setExpectedTomcatItemsText(expected.items.join('\n'))
+    setTomcatModal({ kind: 'add' })
   }
 
-  const updateDockerExpected = (patch: Partial<DockerExpectedServicesSpec>) => {
-    setExpectedDockerDraft((prev) => (prev ? { ...prev, ...patch } : prev))
-  }
-
-  const beginTomcatEdit = (t: TomcatTarget) => {
-    setEditingTomcatTargetId(t.id)
-    setTomcatEditForm({
-      serverId: t.serverId,
-      role: t.role,
-      baseUrl: t.baseUrl,
-      port: t.port,
-      username: t.username,
+  const openEditTomcat = (role: TomcatRole, target: TomcatTarget | null) => {
+    const expected = expectedTomcatDraft.find((spec) => spec.role === role) ?? defaultTomcatExpected(serverId, role)
+    setExpectedTomcatForm(expected)
+    setExpectedTomcatItemsText(expected.items.join('\n'))
+    if (!target) {
+      setTomcatForm({ ...defaultTomcatForm(serverId), role })
+      setTomcatModal({ kind: 'add' })
+      return
+    }
+    setTomcatForm({
+      serverId: target.serverId,
+      role: target.role,
+      baseUrl: target.baseUrl,
+      port: target.port,
+      username: target.username,
       password: '',
-      connectTimeoutMs: t.connectTimeoutMs,
-      requestTimeoutMs: t.requestTimeoutMs,
+      connectTimeoutMs: target.connectTimeoutMs,
+      requestTimeoutMs: target.requestTimeoutMs,
     })
+    setTomcatModal({ kind: 'edit', targetId: target.id })
   }
 
-  const beginActuatorEdit = (t: ActuatorTarget) => {
-    setEditingActuatorTargetId(t.id)
-    setActuatorEditForm({
-      serverId: t.serverId,
-      role: t.role,
-      baseUrl: t.baseUrl,
-      port: t.port,
-      profile: t.profile,
-      connectTimeoutMs: t.connectTimeoutMs,
-      requestTimeoutMs: t.requestTimeoutMs,
+  const openAddActuator = (profile?: string) => {
+    const firstRole = state.kind === 'ready' ? state.targetRoles.find((role) => role.active)?.code : null
+    if (!firstRole) {
+      window.alert('Configure an active target role first.')
+      return
+    }
+    setActuatorForm({ ...defaultActuatorForm(serverId), role: firstRole, profile: profile ?? defaultActuatorForm(serverId).profile })
+    setActuatorExpected(true)
+    setActuatorModal({ kind: 'add' })
+  }
+
+  const openEditActuator = (target: ActuatorTarget) => {
+    setActuatorForm({
+      serverId: target.serverId,
+      role: target.role,
+      baseUrl: target.baseUrl,
+      port: target.port,
+      profile: target.profile,
+      connectTimeoutMs: target.connectTimeoutMs,
+      requestTimeoutMs: target.requestTimeoutMs,
     })
+    setActuatorExpected(expectedDockerDraft.mode !== 'UNCONFIGURED' && expectedDockerDraft.items.includes(target.profile))
+    setActuatorModal({ kind: 'edit', targetId: target.id })
+  }
+
+  const saveTomcatTarget = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!tomcatModal) return
+    if (tomcatModal.kind === 'edit' && !tomcatForm.password.trim()) {
+      window.alert('Password is required.')
+      return
+    }
+
+    const items = expectedTomcatForm.mode === 'EXPLICIT' ? parseLines(expectedTomcatItemsText) : expectedTomcatForm.items
+    if (expectedTomcatForm.mode === 'EXPLICIT' && items.length === 0) {
+      setExpectedTomcatError('Items are required for explicit mode.')
+      return
+    }
+    if (expectedTomcatForm.mode === 'TEMPLATE' && !expectedTomcatForm.templateId) {
+      setExpectedTomcatError('Template is required.')
+      return
+    }
+
+    const previousRole =
+      tomcatModal.kind === 'edit' && state.kind === 'ready'
+        ? state.tomcats.find((target) => target.id === tomcatModal.targetId)?.role ?? tomcatForm.role
+        : tomcatForm.role
+    const nextExpected = upsertTomcatExpected(
+      expectedTomcatDraft,
+      {
+        ...expectedTomcatForm,
+        serverId,
+        role: tomcatForm.role,
+        templateId: expectedTomcatForm.mode === 'TEMPLATE' ? expectedTomcatForm.templateId : null,
+        items: expectedTomcatForm.mode === 'UNCONFIGURED' ? [] : items,
+      },
+      previousRole,
+    )
+
+    const controller = new AbortController()
+    setSavingTomcat(true)
+    setExpectedTomcatError(null)
+    const request = { ...tomcatForm, serverId }
+    const action =
+      tomcatModal.kind === 'add'
+        ? createTomcatTarget(environmentId, request, controller.signal)
+        : updateTomcatTarget(environmentId, tomcatModal.targetId, request, controller.signal)
+
+    action
+      .then(() => replaceServerTomcatExpectedWebappsSpecs(environmentId, serverId, { specs: nextExpected }, controller.signal))
+      .then((updated) => setExpectedTomcatDraft(updated.filter((spec) => spec.mode !== 'UNCONFIGURED')))
+      .then(() => refresh(controller.signal))
+      .then(() => setTomcatModal(null))
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : 'Request failed'
+        setExpectedTomcatError(message)
+        window.alert(message)
+      })
+      .finally(() => setSavingTomcat(false))
+  }
+
+  const saveActuatorTarget = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!actuatorModal) return
+
+    const controller = new AbortController()
+    setSavingActuator(true)
+    const request = { ...actuatorForm, serverId }
+    const previousProfile =
+      actuatorModal.kind === 'edit' && state.kind === 'ready'
+        ? state.microservices.find((target) => target.id === actuatorModal.targetId)?.profile ?? actuatorForm.profile
+        : actuatorForm.profile
+    const expectedItems = expectedDockerDraft.items
+      .filter((profile) => profile !== previousProfile && profile !== request.profile)
+      .concat(actuatorExpected ? [request.profile] : [])
+      .sort()
+    const nextExpected: DockerExpectedServicesSpec = {
+      serverId,
+      mode: expectedItems.length === 0 ? 'UNCONFIGURED' : 'EXPLICIT',
+      templateId: null,
+      items: expectedItems,
+    }
+    const action =
+      actuatorModal.kind === 'add'
+        ? createActuatorTarget(environmentId, request, controller.signal)
+        : updateActuatorTarget(environmentId, actuatorModal.targetId, request, controller.signal)
+
+    action
+      .then(() => replaceServerDockerExpectedServicesSpec(environmentId, serverId, { specs: nextExpected.mode === 'UNCONFIGURED' ? [] : [nextExpected] }, controller.signal))
+      .then((updated) => setExpectedDockerDraft(updated))
+      .then(() => refresh(controller.signal))
+      .then(() => setActuatorModal(null))
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : 'Request failed'
+        setExpectedDockerError(message)
+        window.alert(message)
+      })
+      .finally(() => setSavingActuator(false))
   }
 
   return (
@@ -300,18 +416,12 @@ export function EnvironmentServerPage() {
         <Link to={`/environments/${encodeURIComponent(environmentId)}/overview`}>← Back to environment</Link>
       </div>
 
-      <details className="card" style={{ marginTop: 12, padding: 12 }}>
-        <summary style={{ cursor: 'pointer', fontWeight: 900 }}>Help</summary>
-        <div className="muted" style={{ marginTop: 8 }}>
-          This screen configures a single Server: rename/delete server, configure targets (Tomcats + microservices), and expected sets used for missing-app/service checks on the Dashboard.
-        </div>
-      </details>
-
       {state.kind === 'loading' ? (
         <div className="card" style={{ marginTop: 12, padding: 12 }}>
           <div className="muted">Loading…</div>
         </div>
       ) : null}
+
       {state.kind === 'error' ? (
         <div className="card" style={{ marginTop: 12, padding: 12 }}>
           <div className="muted">Error: {state.message}</div>
@@ -319,744 +429,599 @@ export function EnvironmentServerPage() {
       ) : null}
 
       {state.kind === 'ready' ? (
-        <div className="card" style={{ marginTop: 12, padding: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div className="h2" style={{ margin: 0 }}>
-              {state.server.name}
-            </div>
-            <div className="muted">
-              <code>{state.server.id}</code>
-            </div>
-            {!editingServer ? (
-              <button type="button" className="button" style={{ marginLeft: 'auto' }} onClick={() => setEditingServer(true)}>
-                Rename
+        <>
+          <div className="card" style={{ marginTop: 12, padding: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="h2" style={{ margin: 0 }}>
+                {state.server.name}
+              </div>
+              <div className="muted">
+                <code>{state.server.id}</code>
+              </div>
+              {!editingServer ? (
+                <button type="button" className="button" style={{ marginLeft: 'auto' }} onClick={() => setEditingServer(true)}>
+                  Rename
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="button"
+                onClick={() => {
+                  if (!window.confirm(`Delete server '${state.server.name}'? This will also delete its targets and expected sets.`)) return
+                  const controller = new AbortController()
+                  deleteServer(environmentId, state.server.id, controller.signal)
+                    .then(() => navigate(`/environments/${encodeURIComponent(environmentId)}/overview`))
+                    .catch((e) => window.alert(e instanceof Error ? e.message : 'Request failed'))
+                }}
+              >
+                Delete
               </button>
+            </div>
+
+            {editingServer ? (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'end', marginTop: 10, maxWidth: 720 }}>
+                <label className="field" style={{ flex: 1 }}>
+                  <div className="fieldLabel">Name</div>
+                  <input className="fieldInput" value={serverNameDraft} onChange={(e) => setServerNameDraft(e.target.value)} required />
+                </label>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={savingServerName}
+                  onClick={() => {
+                    const next = serverNameDraft.trim()
+                    if (!next) {
+                      window.alert('Name is required')
+                      return
+                    }
+                    const controller = new AbortController()
+                    setSavingServerName(true)
+                    updateServer(environmentId, state.server.id, { name: next }, controller.signal)
+                      .then(() => refresh(controller.signal))
+                      .then(() => setEditingServer(false))
+                      .catch((e) => window.alert(e instanceof Error ? e.message : 'Request failed'))
+                      .finally(() => setSavingServerName(false))
+                  }}
+                >
+                  {savingServerName ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={savingServerName}
+                  onClick={() => {
+                    setEditingServer(false)
+                    setServerNameDraft(state.server.name)
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             ) : null}
+          </div>
+
+          <div className="tabRow" style={{ marginTop: 12 }} role="tablist" aria-label="Server configuration">
             <button
               type="button"
-              className="button"
-              onClick={() => {
-                if (!window.confirm(`Delete server '${state.server.name}'? This will also delete its targets.`)) return
-                const controller = new AbortController()
-                deleteServer(environmentId, state.server.id, controller.signal)
-                  .then(() => navigate(`/environments/${encodeURIComponent(environmentId)}/overview`))
-                  .catch((e) => window.alert(e instanceof Error ? e.message : 'Request failed'))
-              }}
+              className={`tabButton ${activeTab === 'tomcats' ? 'tabButtonActive' : ''}`}
+              role="tab"
+              aria-selected={activeTab === 'tomcats'}
+              onClick={() => setActiveTab('tomcats')}
             >
-              Delete
+              Tomcats
+            </button>
+            <button
+              type="button"
+              className={`tabButton ${activeTab === 'microservices' ? 'tabButtonActive' : ''}`}
+              role="tab"
+              aria-selected={activeTab === 'microservices'}
+              onClick={() => setActiveTab('microservices')}
+            >
+              Microservices
             </button>
           </div>
 
-          {editingServer ? (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'end', marginTop: 10, maxWidth: 720 }}>
-              <label className="field" style={{ flex: 1 }}>
-                <div className="fieldLabel">Name</div>
-                <input className="fieldInput" value={serverNameDraft} onChange={(e) => setServerNameDraft(e.target.value)} required />
-              </label>
-              <button
-                type="button"
-                className="button"
-                disabled={savingServerName}
-                onClick={() => {
-                  const next = serverNameDraft.trim()
-                  if (!next) {
-                    window.alert('Name is required')
-                    return
-                  }
-                  setSavingServerName(true)
-                  const controller = new AbortController()
-                  updateServer(environmentId, state.server.id, { name: next }, controller.signal)
-                    .then(() => refresh(controller.signal))
-                    .then(() => setEditingServer(false))
-                    .catch((e) => window.alert(e instanceof Error ? e.message : 'Request failed'))
-                    .finally(() => setSavingServerName(false))
-                }}
-              >
-                {savingServerName ? 'Saving…' : 'Save'}
-              </button>
-              <button type="button" className="button" disabled={savingServerName} onClick={() => { setEditingServer(false); setServerNameDraft(state.server.name) }}>
-                Cancel
-              </button>
-            </div>
-          ) : null}
-        </div>
+          {activeTab === 'tomcats' ? (
+            <TomcatsTab
+              tomcats={state.tomcats}
+              expected={expectedTomcatDraft}
+              templates={state.tomcatTemplates}
+              targetRoles={state.targetRoles}
+              expectedError={expectedTomcatError}
+              onAddTarget={openAddTomcat}
+              onEditTarget={openEditTomcat}
+              onDeleteRow={(role, target) => {
+                if (!window.confirm(`Delete Tomcat row '${roleLabel(role, state.targetRoles)}'? This removes the target and expected webapps for this role.`)) return
+                const controller = new AbortController()
+                const nextExpected = expectedTomcatDraft.filter((spec) => spec.role !== role)
+                const deleteTarget = target ? deleteTomcatTarget(environmentId, target.id, controller.signal) : Promise.resolve()
+                deleteTarget
+                  .then(() => replaceServerTomcatExpectedWebappsSpecs(environmentId, serverId, { specs: nextExpected }, controller.signal))
+                  .then((updated) => setExpectedTomcatDraft(updated.filter((spec) => spec.mode !== 'UNCONFIGURED')))
+                  .then(() => refresh(controller.signal))
+                  .catch((e) => {
+                    const message = e instanceof Error ? e.message : 'Request failed'
+                    setExpectedTomcatError(message)
+                    window.alert(message)
+                  })
+              }}
+            />
+          ) : (
+            <MicroservicesTab
+              microservices={state.microservices}
+              expected={expectedDockerDraft}
+              templates={state.dockerTemplates}
+              targetRoles={state.targetRoles}
+              expectedError={expectedDockerError}
+              onAddTarget={openAddActuator}
+              onEditRow={(profile, target) => {
+                if (target) {
+                  openEditActuator(target)
+                } else {
+                  openAddActuator(profile)
+                }
+              }}
+              onDeleteRow={(profile, target) => {
+                if (!window.confirm(`Delete microservice row '${profile}'? This removes the target and expected profile.`)) return
+                const controller = new AbortController()
+                const nextItems = expectedDockerDraft.items.filter((item) => item !== profile)
+                const nextExpected: DockerExpectedServicesSpec = {
+                  serverId,
+                  mode: nextItems.length === 0 ? 'UNCONFIGURED' : 'EXPLICIT',
+                  templateId: null,
+                  items: nextItems,
+                }
+                const deleteTarget = target ? deleteActuatorTarget(environmentId, target.id, controller.signal) : Promise.resolve()
+                deleteTarget
+                  .then(() =>
+                    replaceServerDockerExpectedServicesSpec(
+                      environmentId,
+                      serverId,
+                      { specs: nextExpected.mode === 'UNCONFIGURED' ? [] : [nextExpected] },
+                      controller.signal,
+                    ),
+                  )
+                  .then((updated) => setExpectedDockerDraft(updated))
+                  .then(() => refresh(controller.signal))
+                  .catch((e) => {
+                    const message = e instanceof Error ? e.message : 'Request failed'
+                    setExpectedDockerError(message)
+                    window.alert(message)
+                  })
+              }}
+            />
+          )}
+        </>
       ) : null}
 
-      {state.kind === 'ready' ? (
-        <div id="expected-sets" className="card" style={{ marginTop: 12, padding: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div className="h2" style={{ margin: 0 }}>
-              Expected sets
-            </div>
-            <div className="muted">Missing checks (optional) for this Server.</div>
-          </div>
-
-          <div className="muted" style={{ marginTop: 8 }}>
-            Use <code>Explicit</code> for a custom list, or <code>Template</code> to select a reusable template. Use <code>Disabled</code> to stop missing checks for this role/server.
-          </div>
-
-          <div className="card" style={{ marginTop: 12, padding: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontWeight: 900 }}>Tomcat webapps</div>
-              <button
-                type="button"
-                className="button"
-                style={{ marginLeft: 'auto' }}
-                disabled={savingExpectedTomcat}
-                onClick={() => {
-                  setExpectedTomcatError(null)
-                  const enabled = expectedTomcatDraft.filter((s) => s.mode !== 'UNCONFIGURED')
-
-                  for (const s of enabled) {
-                    if (s.mode === 'TEMPLATE' && !s.templateId) {
-                      setExpectedTomcatError(`Template is required for role ${roleLabel(s.role)}`)
-                      return
-                    }
-                    if (s.mode === 'EXPLICIT') {
-                      const items = s.items.map((i) => i.trim()).filter((i) => i.length > 0)
-                      if (items.length === 0) {
-                        setExpectedTomcatError(`Items cannot be empty for role ${roleLabel(s.role)} (Explicit mode)`)
-                        return
-                      }
-                    }
-                  }
-
-                  const controller = new AbortController()
-                  setSavingExpectedTomcat(true)
-                  replaceServerTomcatExpectedWebappsSpecs(
-                    environmentId,
-                    serverId,
-                    {
-                      specs: enabled.map((s) => ({
-                        serverId,
-                        role: s.role,
-                        mode: s.mode,
-                        templateId: s.mode === 'TEMPLATE' ? s.templateId : null,
-                        items: s.mode === 'EXPLICIT' ? s.items : [],
-                      })),
-                    },
-                    controller.signal,
-                  )
-                    .then((updated) => setExpectedTomcatDraft(updated))
-                    .catch((e) => setExpectedTomcatError(e instanceof Error ? e.message : 'Request failed'))
-                    .finally(() => setSavingExpectedTomcat(false))
-                }}
-              >
-                {savingExpectedTomcat ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-
-            {expectedTomcatError ? (
-              <div className="muted" style={{ marginTop: 8 }}>
-                Error: {expectedTomcatError}
-              </div>
-            ) : null}
-
-            {expectedTomcatDraft.length === 0 ? (
-              <div className="muted" style={{ marginTop: 10 }}>
-                No Tomcat roles configured on this server yet.
-              </div>
-            ) : (
-              <div className="tableWrap" style={{ marginTop: 10 }}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Role</th>
-                      <th style={{ width: 180 }}>Mode</th>
-                      <th style={{ width: 260 }}>Template</th>
-                      <th>Items</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expectedTomcatDraft
-                      .slice()
-                      .sort((a, b) => roleLabel(a.role).localeCompare(roleLabel(b.role)))
-                      .map((s) => {
-                        const mode = s.mode
-                        const itemsText = (mode === 'EXPLICIT' ? s.items : []).join('\n')
-                        return (
-                          <tr key={s.role}>
-                            <td style={{ fontWeight: 900 }}>{roleLabel(s.role)}</td>
-                            <td>
-                              <select
-                                className="fieldInput"
-                                value={mode}
-                                onChange={(e) => {
-                                  const nextMode = e.target.value as ExpectedSetMode
-                                  updateTomcatExpected(s.role, { mode: nextMode, templateId: null, items: [] })
-                                }}
-                                aria-label={`Expected sets mode for ${roleLabel(s.role)}`}
-                              >
-                                <option value="UNCONFIGURED">Disabled</option>
-                                <option value="EXPLICIT">Explicit</option>
-                                <option value="TEMPLATE">Template</option>
-                              </select>
-                            </td>
-                            <td>
-                              {mode === 'TEMPLATE' ? (
-                                <select
-                                  className="fieldInput"
-                                  value={s.templateId ?? ''}
-                                  onChange={(e) => {
-                                    const tid = e.target.value || null
-                                    updateTomcatExpected(s.role, { templateId: tid, items: tid ? state.tomcatTemplates.find((t) => t.id === tid)?.items ?? [] : [] })
-                                  }}
-                                  aria-label={`Expected sets template for ${roleLabel(s.role)}`}
-                                >
-                                  <option value="">Select template…</option>
-                                  {state.tomcatTemplates.map((t) => (
-                                    <option key={t.id} value={t.id}>
-                                      {t.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span className="muted">—</span>
-                              )}
-                            </td>
-                            <td style={{ minWidth: 340 }}>
-                              {mode === 'EXPLICIT' ? (
-                                <textarea
-                                  className="fieldInput"
-                                  style={{ minHeight: 78 }}
-                                  value={itemsText}
-                                  onChange={(e) => updateTomcatExpected(s.role, { items: parseLines(e.target.value) })}
-                                  aria-label={`Expected webapp paths for ${roleLabel(s.role)}`}
-                                />
-                              ) : mode === 'TEMPLATE' ? (
-                                <textarea className="fieldInput" style={{ minHeight: 78 }} value={s.items.join('\n') || '—'} readOnly />
-                              ) : (
-                                <span className="muted">Disabled.</span>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="card" style={{ marginTop: 12, padding: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontWeight: 900 }}>Docker services</div>
-              <button
-                type="button"
-                className="button"
-                style={{ marginLeft: 'auto' }}
-                disabled={savingExpectedDocker || !expectedDockerDraft}
-                onClick={() => {
-                  if (!expectedDockerDraft) return
-                  setExpectedDockerError(null)
-                  const s = expectedDockerDraft
-
-                  if (s.mode === 'TEMPLATE' && !s.templateId) {
-                    setExpectedDockerError('Template is required in Template mode')
-                    return
-                  }
-                  if (s.mode === 'EXPLICIT') {
-                    const items = s.items.map((i) => i.trim()).filter((i) => i.length > 0)
-                    if (items.length === 0) {
-                      setExpectedDockerError('Items cannot be empty in Explicit mode')
-                      return
-                    }
-                  }
-
-                  const controller = new AbortController()
-                  setSavingExpectedDocker(true)
-                  replaceServerDockerExpectedServicesSpec(
-                    environmentId,
-                    serverId,
-                    {
-                      specs:
-                        s.mode === 'UNCONFIGURED'
-                          ? []
-                          : [
-                              {
-                                serverId,
-                                mode: s.mode,
-                                templateId: s.mode === 'TEMPLATE' ? s.templateId : null,
-                                items: s.mode === 'EXPLICIT' ? s.items : [],
-                              },
-                            ],
-                    },
-                    controller.signal,
-                  )
-                    .then((updated) => setExpectedDockerDraft(updated))
-                    .catch((e) => setExpectedDockerError(e instanceof Error ? e.message : 'Request failed'))
-                    .finally(() => setSavingExpectedDocker(false))
-                }}
-              >
-                {savingExpectedDocker ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-
-            {expectedDockerError ? (
-              <div className="muted" style={{ marginTop: 8 }}>
-                Error: {expectedDockerError}
-              </div>
-            ) : null}
-
-            {expectedDockerDraft ? (
-              <div style={{ marginTop: 10, display: 'grid', gap: 10, maxWidth: 980 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10, alignItems: 'end' }}>
-                  <label className="field">
-                    <div className="fieldLabel">Mode</div>
-                    <select
-                      className="fieldInput"
-                      value={expectedDockerDraft.mode}
-                      onChange={(e) => {
-                        const nextMode = e.target.value as ExpectedSetMode
-                        updateDockerExpected({ mode: nextMode, templateId: null, items: [] })
-                      }}
-                      aria-label="Docker expected sets mode"
-                    >
-                      <option value="UNCONFIGURED">Disabled</option>
-                      <option value="EXPLICIT">Explicit</option>
-                      <option value="TEMPLATE">Template</option>
-                    </select>
-                  </label>
-
-                  <label className="field">
-                    <div className="fieldLabel">Template</div>
-                    {expectedDockerDraft.mode === 'TEMPLATE' ? (
-                      <select
-                        className="fieldInput"
-                        value={expectedDockerDraft.templateId ?? ''}
-                        onChange={(e) => {
-                          const tid = e.target.value || null
-                          const items = tid ? state.dockerTemplates.find((t) => t.id === tid)?.items ?? [] : []
-                          updateDockerExpected({ templateId: tid, items })
-                        }}
-                        aria-label="Docker expected sets template"
-                      >
-                        <option value="">Select template…</option>
-                        {state.dockerTemplates.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input className="fieldInput" value="—" readOnly aria-label="Docker template (disabled)" />
-                    )}
-                  </label>
-                </div>
-
-                <label className="field">
-                  <div className="fieldLabel">Items</div>
-                  {expectedDockerDraft.mode === 'EXPLICIT' ? (
-                    <textarea
-                      className="fieldInput"
-                      style={{ minHeight: 92 }}
-                      value={expectedDockerDraft.items.join('\n')}
-                      onChange={(e) => updateDockerExpected({ items: parseLines(e.target.value) })}
-                      aria-label="Expected docker service profiles"
-                    />
-                  ) : expectedDockerDraft.mode === 'TEMPLATE' ? (
-                    <textarea className="fieldInput" style={{ minHeight: 92 }} value={expectedDockerDraft.items.join('\n') || '—'} readOnly />
-                  ) : (
-                    <textarea className="fieldInput" style={{ minHeight: 92 }} value="Disabled." readOnly />
-                  )}
-                </label>
-              </div>
-            ) : (
-              <div className="muted" style={{ marginTop: 10 }}>
-                Loading…
-              </div>
-            )}
-          </div>
-        </div>
+      {tomcatModal ? (
+        <Modal title={tomcatModal.kind === 'add' ? 'Add Tomcat target' : 'Edit Tomcat target'} onClose={() => setTomcatModal(null)}>
+          <TomcatTargetForm
+            form={tomcatForm}
+            setForm={setTomcatForm}
+            expectedForm={expectedTomcatForm}
+            setExpectedForm={setExpectedTomcatForm}
+            expectedItemsText={expectedTomcatItemsText}
+            setExpectedItemsText={setExpectedTomcatItemsText}
+            templates={state.kind === 'ready' ? state.tomcatTemplates : []}
+            targetRoles={state.kind === 'ready' ? state.targetRoles : []}
+            saving={savingTomcat}
+            submitLabel={tomcatModal.kind === 'add' ? 'Add target' : 'Save changes'}
+            onSubmit={saveTomcatTarget}
+            onCancel={() => setTomcatModal(null)}
+            isEdit={tomcatModal.kind === 'edit'}
+          />
+          {expectedTomcatError ? <div className="muted" style={{ marginTop: 10 }}>Error: {expectedTomcatError}</div> : null}
+        </Modal>
       ) : null}
 
-      {state.kind === 'ready' ? (
-        <div className="card" style={{ marginTop: 12, padding: 12 }}>
-          <div className="h2" style={{ margin: 0 }}>
-            Tomcat targets
-          </div>
-          <div className="muted" style={{ marginTop: 6 }}>
-            Scanner hits <code>/manager/html</code> using HTTP Basic auth. Scans run automatically on a background schedule (no manual scanning from UI).
-          </div>
+      {actuatorModal ? (
+        <Modal title={actuatorModal.kind === 'add' ? 'Add microservice' : 'Edit microservice'} onClose={() => setActuatorModal(null)}>
+          <ActuatorTargetForm
+            form={actuatorForm}
+            setForm={setActuatorForm}
+            targetRoles={state.kind === 'ready' ? state.targetRoles : []}
+            expected={actuatorExpected}
+            setExpected={setActuatorExpected}
+            saving={savingActuator}
+            submitLabel={actuatorModal.kind === 'add' ? 'Add microservice' : 'Save changes'}
+            onSubmit={saveActuatorTarget}
+            onCancel={() => setActuatorModal(null)}
+          />
+          {expectedDockerError ? <div className="muted" style={{ marginTop: 10 }}>Error: {expectedDockerError}</div> : null}
+        </Modal>
+      ) : null}
+    </div>
+  )
+}
 
-          <div className="tableWrap" style={{ marginTop: 10 }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Role</th>
-                  <th>Endpoint</th>
-                  <th>User</th>
-                  <th>Last scan</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {state.tomcats.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="muted">
-                      No Tomcat targets.
+function TomcatsTab({
+  tomcats,
+  expected,
+  templates,
+  targetRoles,
+  expectedError,
+  onAddTarget,
+  onEditTarget,
+  onDeleteRow,
+}: {
+  tomcats: TomcatTarget[]
+  expected: TomcatExpectedWebappsSpec[]
+  templates: ExpectedSetTemplate[]
+  targetRoles: EnvironmentTargetRole[]
+  expectedError: string | null
+  onAddTarget: () => void
+  onEditTarget: (role: TomcatRole, target: TomcatTarget | null) => void
+  onDeleteRow: (role: TomcatRole, target: TomcatTarget | null) => void
+}) {
+  const targetByRole = new Map(tomcats.map((target) => [target.role, target]))
+  const expectedByRole = new Map(expected.map((spec) => [spec.role, spec]))
+  const rowRoles = Array.from(new Set([...tomcats.map((target) => target.role), ...expected.map((spec) => spec.role)]))
+    .sort((a, b) => roleLabel(a, targetRoles).localeCompare(roleLabel(b, targetRoles)))
+  const canAddTarget = targetRoles.some((role) => role.active && !targetByRole.has(role.code))
+
+  return (
+    <div role="tabpanel" className="serverTabPanel">
+      <section className="panelSection">
+        <div className="sectionHeader">
+          <div>
+            <div className="h2" style={{ margin: 0 }}>Tomcats</div>
+            <div className="muted" style={{ marginTop: 4 }}>Manager endpoint and expected webapps per role.</div>
+          </div>
+          <button type="button" className="button" onClick={onAddTarget} disabled={!canAddTarget}>Add</button>
+        </div>
+        {expectedError ? <div className="muted" style={{ marginTop: 8 }}>Error: {expectedError}</div> : null}
+        <div className="tableWrap" style={{ marginTop: 10 }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Role</th>
+                <th>Endpoint</th>
+                <th>Expected webapps</th>
+                <th>Last scan</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {rowRoles.length === 0 ? (
+                <tr><td colSpan={5} className="muted">No Tomcats configured.</td></tr>
+              ) : null}
+              {rowRoles.map((role) => {
+                const target = targetByRole.get(role) ?? null
+                const spec = expectedByRole.get(role) ?? null
+                return (
+                  <tr key={role}>
+                    <td style={{ fontWeight: 900 }}>{roleLabel(role, targetRoles)}</td>
+                    <td className="muted">{target ? `${target.baseUrl}:${target.port}` : 'No target'}</td>
+                    <td className="muted">{tomcatExpectedSummary(spec, templates)}</td>
+                    <td className="muted">{formatTs(target?.state?.scannedAt ?? null)}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button type="button" className="button" onClick={() => onEditTarget(role, target)}>Edit</button>
+                      <button type="button" className="button" onClick={() => onDeleteRow(role, target)}>Del</button>
                     </td>
                   </tr>
-                ) : null}
-                {state.tomcats
-                  .slice()
-                  .sort((a, b) => a.role.localeCompare(b.role))
-                  .map((t) => (
-                    <tr key={t.id}>
-                      <td style={{ fontWeight: 800 }}>{roleLabel(t.role)}</td>
-                      <td className="muted">
-                        {t.baseUrl}:{t.port}
-                      </td>
-                      <td className="muted">{t.username}</td>
-                      <td className="muted">{formatTs(t.state?.scannedAt ?? null)}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <button type="button" className="button" onClick={() => beginTomcatEdit(t)}>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="button"
-                          onClick={() => {
-                            if (!window.confirm(`Delete Tomcat target '${roleLabel(t.role)}'?`)) return
-                            const controller = new AbortController()
-                            deleteTomcatTarget(environmentId, t.id, controller.signal).then(() => refresh())
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-
-          {editingTomcatTargetId && tomcatEditForm ? (
-            <div className="card" style={{ marginTop: 12, padding: 12 }}>
-              <div className="h2">Edit Tomcat target</div>
-              <div className="muted" style={{ marginTop: 6 }}>
-                Password is required on update (stored in DB; not returned by API).
-              </div>
-              <form
-                style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (!tomcatEditForm.password.trim()) {
-                    window.alert('Password is required')
-                    return
-                  }
-                  const controller = new AbortController()
-                  setSavingTomcatEdit(true)
-                  updateTomcatTarget(environmentId, editingTomcatTargetId, tomcatEditForm, controller.signal)
-                    .then(() => refresh())
-                    .then(() => setEditingTomcatTargetId(null))
-                    .finally(() => setSavingTomcatEdit(false))
-                }}
-              >
-                <label className="field">
-                  <div className="fieldLabel">Role</div>
-                  <select className="fieldInput" value={tomcatEditForm.role} onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, role: e.target.value as TomcatRole } : f))} required>
-                    <option value="PAYMENTS">payments</option>
-                    <option value="SERVICES">services</option>
-                    <option value="AUTH">auth</option>
-                  </select>
-                </label>
-                <div />
-                <label className="field">
-                  <div className="fieldLabel">Base URL</div>
-                  <input className="fieldInput" value={tomcatEditForm.baseUrl} onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, baseUrl: e.target.value } : f))} required />
-                </label>
-                <label className="field">
-                  <div className="fieldLabel">Port</div>
-                  <input className="fieldInput" type="number" value={tomcatEditForm.port} onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, port: Number(e.target.value) } : f))} min={1} max={65535} required />
-                </label>
-                <label className="field">
-                  <div className="fieldLabel">Username</div>
-                  <input className="fieldInput" value={tomcatEditForm.username} onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, username: e.target.value } : f))} required />
-                </label>
-                <label className="field">
-                  <div className="fieldLabel">Password</div>
-                  <input className="fieldInput" type="password" value={tomcatEditForm.password} onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, password: e.target.value } : f))} required />
-                </label>
-                <label className="field">
-                  <div className="fieldLabel">Connect timeout (ms)</div>
-                  <input className="fieldInput" type="number" value={tomcatEditForm.connectTimeoutMs} onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, connectTimeoutMs: Number(e.target.value) } : f))} min={1} required />
-                </label>
-                <label className="field">
-                  <div className="fieldLabel">Request timeout (ms)</div>
-                  <input className="fieldInput" type="number" value={tomcatEditForm.requestTimeoutMs} onChange={(e) => setTomcatEditForm((f) => (f ? { ...f, requestTimeoutMs: Number(e.target.value) } : f))} min={1} required />
-                </label>
-                <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
-                  <button type="button" className="button" disabled={probingTomcat || savingTomcatEdit} onClick={() => probeTomcat(tomcatEditForm)}>
-                    {probingTomcat ? 'Testing…' : 'Test endpoint'}
-                  </button>
-                  <button type="submit" className="button" disabled={savingTomcatEdit}>
-                    {savingTomcatEdit ? 'Saving…' : 'Save changes'}
-                  </button>
-                  <button type="button" className="button" onClick={() => setEditingTomcatTargetId(null)}>
-                    Cancel
-                  </button>
-                </div>
-                {tomcatProbeResult ? (
-                  <div className="muted" role="status" style={{ gridColumn: '1 / span 2' }}>
-                    {tomcatProbeResult}
-                  </div>
-                ) : null}
-              </form>
-            </div>
-          ) : null}
-
-          <div className="card" style={{ marginTop: 12, padding: 12, maxWidth: 820 }}>
-            <div className="h2">Add Tomcat target</div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Dummy-stack defaults are prefilled for convenience (still sent explicitly).
-            </div>
-            <form
-              style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
-              onSubmit={(e) => {
-                e.preventDefault()
-                const controller = new AbortController()
-                setSavingTomcatCreate(true)
-                createTomcatTarget(environmentId, { ...tomcatForm, serverId }, controller.signal)
-                  .then(() => refresh())
-                  .finally(() => setSavingTomcatCreate(false))
-              }}
-            >
-              <label className="field">
-                <div className="fieldLabel">Role</div>
-                <select className="fieldInput" value={tomcatForm.role} onChange={(e) => setTomcatForm((f) => ({ ...f, role: e.target.value as TomcatRole }))} required>
-                  <option value="PAYMENTS">payments</option>
-                  <option value="SERVICES">services</option>
-                  <option value="AUTH">auth</option>
-                </select>
-              </label>
-              <div />
-              <label className="field">
-                <div className="fieldLabel">Base URL</div>
-                <input className="fieldInput" value={tomcatForm.baseUrl} onChange={(e) => setTomcatForm((f) => ({ ...f, baseUrl: e.target.value }))} required />
-              </label>
-              <label className="field">
-                <div className="fieldLabel">Port</div>
-                <input className="fieldInput" type="number" value={tomcatForm.port} onChange={(e) => setTomcatForm((f) => ({ ...f, port: Number(e.target.value) }))} min={1} max={65535} required />
-              </label>
-              <label className="field">
-                <div className="fieldLabel">Username</div>
-                <input className="fieldInput" value={tomcatForm.username} onChange={(e) => setTomcatForm((f) => ({ ...f, username: e.target.value }))} required />
-              </label>
-              <label className="field">
-                <div className="fieldLabel">Password</div>
-                <input className="fieldInput" type="password" value={tomcatForm.password} onChange={(e) => setTomcatForm((f) => ({ ...f, password: e.target.value }))} required />
-              </label>
-              <label className="field">
-                <div className="fieldLabel">Connect timeout (ms)</div>
-                <input className="fieldInput" type="number" value={tomcatForm.connectTimeoutMs} onChange={(e) => setTomcatForm((f) => ({ ...f, connectTimeoutMs: Number(e.target.value) }))} min={1} required />
-              </label>
-              <label className="field">
-                <div className="fieldLabel">Request timeout (ms)</div>
-                <input className="fieldInput" type="number" value={tomcatForm.requestTimeoutMs} onChange={(e) => setTomcatForm((f) => ({ ...f, requestTimeoutMs: Number(e.target.value) }))} min={1} required />
-              </label>
-              <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
-                <button type="button" className="button" disabled={probingTomcat || savingTomcatCreate} onClick={() => probeTomcat(tomcatForm)}>
-                  {probingTomcat ? 'Testing…' : 'Test endpoint'}
-                </button>
-                <button type="submit" className="button" disabled={savingTomcatCreate}>
-                  {savingTomcatCreate ? 'Saving…' : 'Add target'}
-                </button>
-              </div>
-              {tomcatProbeResult ? (
-                <div className="muted" role="status" style={{ gridColumn: '1 / span 2' }}>
-                  {tomcatProbeResult}
-                </div>
-              ) : null}
-            </form>
-          </div>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
-      ) : null}
+      </section>
+    </div>
+  )
+}
 
-      {state.kind === 'ready' ? (
-        <div className="card" style={{ marginTop: 12, padding: 12 }}>
-          <div className="h2" style={{ margin: 0 }}>
-            Microservices (Actuator targets)
-          </div>
-          <div className="muted" style={{ marginTop: 6 }}>
-            Scanner calls <code>/{'{'}profile{'}'}/actuator/*</code>. <code>baseUrl</code> must be absolute and must not include port/path.
-          </div>
+function MicroservicesTab({
+  microservices,
+  expected,
+  templates,
+  targetRoles,
+  expectedError,
+  onAddTarget,
+  onEditRow,
+  onDeleteRow,
+}: {
+  microservices: ActuatorTarget[]
+  expected: DockerExpectedServicesSpec
+  templates: ExpectedSetTemplate[]
+  targetRoles: EnvironmentTargetRole[]
+  expectedError: string | null
+  onAddTarget: () => void
+  onEditRow: (profile: string, target: ActuatorTarget | null) => void
+  onDeleteRow: (profile: string, target: ActuatorTarget | null) => void
+}) {
+  const targetByProfile = new Map(microservices.map((target) => [target.profile, target]))
+  const profiles = Array.from(new Set([...microservices.map((target) => target.profile), ...expected.items])).sort()
+  const canAddTarget = targetRoles.some((role) => role.active)
 
-          <div className="tableWrap" style={{ marginTop: 10 }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Profile</th>
-                  <th>Endpoint</th>
-                  <th>Last scan</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {state.microservices.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="muted">
-                      No microservices.
+  return (
+    <div role="tabpanel" className="serverTabPanel">
+      <section className="panelSection">
+        <div className="sectionHeader">
+          <div>
+            <div className="h2" style={{ margin: 0 }}>Microservices</div>
+            <div className="muted" style={{ marginTop: 4 }}>Spring Boot Actuator endpoints grouped by profile.</div>
+          </div>
+          <button type="button" className="button" onClick={onAddTarget} disabled={!canAddTarget}>Add</button>
+        </div>
+        {expectedError ? <div className="muted" style={{ marginTop: 8 }}>Error: {expectedError}</div> : null}
+        <div className="tableWrap" style={{ marginTop: 10 }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Profile</th>
+                <th>Endpoint</th>
+                <th>Expected</th>
+                <th>Last scan</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {profiles.length === 0 ? (
+                <tr><td colSpan={5} className="muted">No microservices configured.</td></tr>
+              ) : null}
+              {profiles.map((profile) => {
+                const target = targetByProfile.get(profile) ?? null
+                return (
+                  <tr key={profile}>
+                    <td style={{ fontWeight: 900 }}>{profile}</td>
+                    <td className="muted">{target ? `${target.baseUrl}:${target.port}` : 'No target'}</td>
+                    <td className="muted">{dockerExpectedSummary(expected, profile, templates)}</td>
+                    <td className="muted">{formatTs(target?.state?.scannedAt ?? null)}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button type="button" className="button" onClick={() => onEditRow(profile, target)}>Edit</button>
+                      <button type="button" className="button" onClick={() => onDeleteRow(profile, target)}>Del</button>
                     </td>
                   </tr>
-                ) : null}
-                {state.microservices
-                  .slice()
-                  .sort((a, b) => a.profile.localeCompare(b.profile))
-                  .map((t) => (
-                    <tr key={t.id}>
-                      <td style={{ fontWeight: 800 }}>{t.profile}</td>
-                      <td className="muted">
-                        {t.baseUrl}:{t.port}
-                      </td>
-                      <td className="muted">{formatTs(t.state?.scannedAt ?? null)}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <button type="button" className="button" onClick={() => beginActuatorEdit(t)}>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="button"
-                          onClick={() => {
-                            if (!window.confirm(`Delete microservice '${t.profile}'?`)) return
-                            const controller = new AbortController()
-                            deleteActuatorTarget(environmentId, t.id, controller.signal).then(() => refresh())
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-
-          {editingActuatorTargetId && actuatorEditForm ? (
-            <div className="card" style={{ marginTop: 12, padding: 12 }}>
-              <div className="h2">Edit microservice</div>
-              <form
-                style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  const controller = new AbortController()
-                  setSavingActuatorEdit(true)
-                  updateActuatorTarget(environmentId, editingActuatorTargetId, actuatorEditForm, controller.signal)
-                    .then(() => refresh())
-                    .then(() => setEditingActuatorTargetId(null))
-                    .finally(() => setSavingActuatorEdit(false))
-                }}
-              >
-                <label className="field">
-                  <div className="fieldLabel">Role</div>
-                  <select className="fieldInput" value={actuatorEditForm.role} onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, role: e.target.value as TomcatRole } : f))} required>
-                    <option value="PAYMENTS">payments</option>
-                    <option value="SERVICES">services</option>
-                    <option value="AUTH">auth</option>
-                  </select>
-                </label>
-                <div />
-                <label className="field">
-                  <div className="fieldLabel">Base URL</div>
-                  <input className="fieldInput" value={actuatorEditForm.baseUrl} onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, baseUrl: e.target.value } : f))} required />
-                </label>
-                <label className="field">
-                  <div className="fieldLabel">Port</div>
-                  <input className="fieldInput" type="number" value={actuatorEditForm.port} onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, port: Number(e.target.value) } : f))} min={1} max={65535} required />
-                </label>
-                <label className="field">
-                  <div className="fieldLabel">Profile</div>
-                  <input className="fieldInput" value={actuatorEditForm.profile} onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, profile: e.target.value } : f))} required />
-                </label>
-                <div />
-                <label className="field">
-                  <div className="fieldLabel">Connect timeout (ms)</div>
-                  <input className="fieldInput" type="number" value={actuatorEditForm.connectTimeoutMs} onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, connectTimeoutMs: Number(e.target.value) } : f))} min={1} required />
-                </label>
-                <label className="field">
-                  <div className="fieldLabel">Request timeout (ms)</div>
-                  <input className="fieldInput" type="number" value={actuatorEditForm.requestTimeoutMs} onChange={(e) => setActuatorEditForm((f) => (f ? { ...f, requestTimeoutMs: Number(e.target.value) } : f))} min={1} required />
-                </label>
-                <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
-                  <button type="button" className="button" disabled={probingActuator || savingActuatorEdit} onClick={() => probeActuator(actuatorEditForm)}>
-                    {probingActuator ? 'Testing…' : 'Test endpoint'}
-                  </button>
-                  <button type="submit" className="button" disabled={savingActuatorEdit}>
-                    {savingActuatorEdit ? 'Saving…' : 'Save changes'}
-                  </button>
-                  <button type="button" className="button" onClick={() => setEditingActuatorTargetId(null)}>
-                    Cancel
-                  </button>
-                </div>
-                {actuatorProbeResult ? (
-                  <div className="muted" role="status" style={{ gridColumn: '1 / span 2' }}>
-                    {actuatorProbeResult}
-                  </div>
-                ) : null}
-              </form>
-            </div>
-          ) : null}
-
-          <div className="card" style={{ marginTop: 12, padding: 12, maxWidth: 820 }}>
-            <div className="h2">Add microservice</div>
-            <form
-              style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
-              onSubmit={(e) => {
-                e.preventDefault()
-                const controller = new AbortController()
-                setSavingActuatorCreate(true)
-                createActuatorTarget(environmentId, { ...actuatorForm, serverId }, controller.signal)
-                  .then(() => refresh())
-                  .finally(() => setSavingActuatorCreate(false))
-              }}
-            >
-              <label className="field">
-                <div className="fieldLabel">Role</div>
-                <select className="fieldInput" value={actuatorForm.role} onChange={(e) => setActuatorForm((f) => ({ ...f, role: e.target.value as TomcatRole }))} required>
-                  <option value="PAYMENTS">payments</option>
-                  <option value="SERVICES">services</option>
-                  <option value="AUTH">auth</option>
-                </select>
-              </label>
-              <div />
-              <label className="field">
-                <div className="fieldLabel">Base URL</div>
-                <input className="fieldInput" value={actuatorForm.baseUrl} onChange={(e) => setActuatorForm((f) => ({ ...f, baseUrl: e.target.value }))} required />
-              </label>
-              <label className="field">
-                <div className="fieldLabel">Port</div>
-                <input className="fieldInput" type="number" value={actuatorForm.port} onChange={(e) => setActuatorForm((f) => ({ ...f, port: Number(e.target.value) }))} min={1} max={65535} required />
-              </label>
-              <label className="field">
-                <div className="fieldLabel">Profile</div>
-                <input className="fieldInput" value={actuatorForm.profile} onChange={(e) => setActuatorForm((f) => ({ ...f, profile: e.target.value }))} required />
-              </label>
-              <div />
-              <label className="field">
-                <div className="fieldLabel">Connect timeout (ms)</div>
-                <input className="fieldInput" type="number" value={actuatorForm.connectTimeoutMs} onChange={(e) => setActuatorForm((f) => ({ ...f, connectTimeoutMs: Number(e.target.value) }))} min={1} required />
-              </label>
-              <label className="field">
-                <div className="fieldLabel">Request timeout (ms)</div>
-                <input className="fieldInput" type="number" value={actuatorForm.requestTimeoutMs} onChange={(e) => setActuatorForm((f) => ({ ...f, requestTimeoutMs: Number(e.target.value) }))} min={1} required />
-              </label>
-              <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10 }}>
-                <button type="button" className="button" disabled={probingActuator || savingActuatorCreate} onClick={() => probeActuator(actuatorForm)}>
-                  {probingActuator ? 'Testing…' : 'Test endpoint'}
-                </button>
-                <button type="submit" className="button" disabled={savingActuatorCreate}>
-                  {savingActuatorCreate ? 'Saving…' : 'Add microservice'}
-                </button>
-              </div>
-              {actuatorProbeResult ? (
-                <div className="muted" role="status" style={{ gridColumn: '1 / span 2' }}>
-                  {actuatorProbeResult}
-                </div>
-              ) : null}
-            </form>
-          </div>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
+      </section>
+    </div>
+  )
+}
+
+function TomcatTargetForm({
+  form,
+  setForm,
+  expectedForm,
+  setExpectedForm,
+  expectedItemsText,
+  setExpectedItemsText,
+  templates,
+  targetRoles,
+  saving,
+  submitLabel,
+  onSubmit,
+  onCancel,
+  isEdit,
+}: {
+  form: TomcatTargetCreateRequest
+  setForm: (form: TomcatTargetCreateRequest) => void
+  expectedForm: TomcatExpectedWebappsSpec
+  setExpectedForm: (form: TomcatExpectedWebappsSpec) => void
+  expectedItemsText: string
+  setExpectedItemsText: (value: string) => void
+  templates: ExpectedSetTemplate[]
+  targetRoles: EnvironmentTargetRole[]
+  saving: boolean
+  submitLabel: string
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+  isEdit: boolean
+}) {
+  return (
+    <form className="modalFormGrid" onSubmit={onSubmit}>
+      <RoleField
+        value={form.role}
+        targetRoles={targetRoles}
+        onChange={(role) => {
+          setForm({ ...form, role })
+          setExpectedForm({ ...expectedForm, role })
+        }}
+      />
+      <div />
+      <TextInput label="Base URL" value={form.baseUrl} onChange={(baseUrl) => setForm({ ...form, baseUrl })} required />
+      <NumberInput label="Port" value={form.port} onChange={(port) => setForm({ ...form, port })} min={1} max={65535} required />
+      <TextInput label="Username" value={form.username} onChange={(username) => setForm({ ...form, username })} required />
+      <TextInput label={isEdit ? 'Password (required to save)' : 'Password'} type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required />
+      <NumberInput label="Connect timeout (ms)" value={form.connectTimeoutMs} onChange={(connectTimeoutMs) => setForm({ ...form, connectTimeoutMs })} min={1} required />
+      <NumberInput label="Request timeout (ms)" value={form.requestTimeoutMs} onChange={(requestTimeoutMs) => setForm({ ...form, requestTimeoutMs })} min={1} required />
+      <label className="field">
+        <div className="fieldLabel">Expected webapps</div>
+        <select
+          className="fieldInput"
+          value={expectedForm.mode}
+          onChange={(e) => setExpectedForm({ ...expectedForm, mode: e.target.value as ExpectedSetMode, templateId: null, items: [] })}
+        >
+          <option value="UNCONFIGURED">Disabled</option>
+          <option value="EXPLICIT">Explicit</option>
+          <option value="TEMPLATE">Template</option>
+        </select>
+      </label>
+      {expectedForm.mode === 'TEMPLATE' ? (
+        <label className="field">
+          <div className="fieldLabel">Template</div>
+          <select
+            className="fieldInput"
+            value={expectedForm.templateId ?? ''}
+            onChange={(e) => {
+              const templateId = e.target.value || null
+              const template = templates.find((candidate) => candidate.id === templateId)
+              setExpectedForm({ ...expectedForm, templateId, items: template?.items ?? [] })
+            }}
+            required
+          >
+            <option value="">Select template…</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>{template.name}</option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <div />
+      )}
+      {expectedForm.mode === 'EXPLICIT' ? (
+        <label className="field" style={{ gridColumn: '1 / span 2' }}>
+          <div className="fieldLabel">Expected paths</div>
+          <textarea className="fieldInput" rows={5} value={expectedItemsText} onChange={(e) => setExpectedItemsText(e.target.value)} required />
+        </label>
       ) : null}
+      <ModalActions saving={saving} submitLabel={submitLabel} onCancel={onCancel} />
+    </form>
+  )
+}
+
+function ActuatorTargetForm({
+  form,
+  setForm,
+  targetRoles,
+  expected,
+  setExpected,
+  saving,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  form: ActuatorTargetCreateRequest
+  setForm: (form: ActuatorTargetCreateRequest) => void
+  targetRoles: EnvironmentTargetRole[]
+  expected: boolean
+  setExpected: (expected: boolean) => void
+  saving: boolean
+  submitLabel: string
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+}) {
+  return (
+    <form className="modalFormGrid" onSubmit={onSubmit}>
+      <RoleField value={form.role} targetRoles={targetRoles} onChange={(role) => setForm({ ...form, role })} />
+      <div />
+      <TextInput label="Base URL" value={form.baseUrl} onChange={(baseUrl) => setForm({ ...form, baseUrl })} required />
+      <NumberInput label="Port" value={form.port} onChange={(port) => setForm({ ...form, port })} min={1} max={65535} required />
+      <TextInput label="Profile" value={form.profile} onChange={(profile) => setForm({ ...form, profile })} required />
+      <div />
+      <NumberInput label="Connect timeout (ms)" value={form.connectTimeoutMs} onChange={(connectTimeoutMs) => setForm({ ...form, connectTimeoutMs })} min={1} required />
+      <NumberInput label="Request timeout (ms)" value={form.requestTimeoutMs} onChange={(requestTimeoutMs) => setForm({ ...form, requestTimeoutMs })} min={1} required />
+      <label className="field" style={{ gridColumn: '1 / span 2' }}>
+        <div className="fieldLabel">Expected profile</div>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 800 }}>
+          <input type="checkbox" checked={expected} onChange={(e) => setExpected(e.target.checked)} />
+          Include this profile in expected services
+        </label>
+      </label>
+      <ModalActions saving={saving} submitLabel={submitLabel} onCancel={onCancel} />
+    </form>
+  )
+}
+
+function RoleField({
+  value,
+  targetRoles,
+  onChange,
+}: {
+  value: TomcatRole
+  targetRoles: EnvironmentTargetRole[]
+  onChange: (role: TomcatRole) => void
+}) {
+  const options = targetRoles.filter((role) => role.active || role.code === value)
+  return (
+    <label className="field">
+      <div className="fieldLabel">Role</div>
+      <select className="fieldInput" value={value} onChange={(e) => onChange(e.target.value as TomcatRole)} required>
+        <option value="" disabled>
+          Select role…
+        </option>
+        {options.map((role) => (
+          <option key={role.code} value={role.code}>{role.label}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function TextInput({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  required,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  type?: string
+  required?: boolean
+}) {
+  return (
+    <label className="field">
+      <div className="fieldLabel">{label}</div>
+      <input className="fieldInput" type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} />
+    </label>
+  )
+}
+
+function NumberInput({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  required,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min?: number
+  max?: number
+  required?: boolean
+}) {
+  return (
+    <label className="field">
+      <div className="fieldLabel">{label}</div>
+      <input className="fieldInput" type="number" value={value} min={min} max={max} onChange={(e) => onChange(Number(e.target.value))} required={required} />
+    </label>
+  )
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string
+  children: ReactNode
+  onClose: () => void
+}) {
+  return (
+    <div className="modalBackdrop" role="presentation" onMouseDown={(e) => {
+      if (e.target === e.currentTarget) onClose()
+    }}>
+      <div className="modalPanel" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="sectionHeader">
+          <div className="h2" style={{ margin: 0 }}>{title}</div>
+          <button type="button" className="button" onClick={onClose}>Close</button>
+        </div>
+        <div style={{ marginTop: 12 }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function ModalActions({
+  saving = false,
+  submitLabel,
+  onCancel,
+}: {
+  saving?: boolean
+  submitLabel: string
+  onCancel: () => void
+}) {
+  return (
+    <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+      <button type="button" className="button" onClick={onCancel} disabled={saving}>Cancel</button>
+      <button type="submit" className="button" disabled={saving}>{saving ? 'Saving…' : submitLabel}</button>
     </div>
   )
 }

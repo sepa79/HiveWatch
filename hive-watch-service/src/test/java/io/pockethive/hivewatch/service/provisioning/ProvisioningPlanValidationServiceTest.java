@@ -17,7 +17,6 @@ import io.pockethive.hivewatch.service.api.ProvisioningTomcatExpectedWebappsDto;
 import io.pockethive.hivewatch.service.api.ProvisioningTomcatExpectedWebappsSpecDto;
 import io.pockethive.hivewatch.service.api.ProvisioningTomcatTargetDto;
 import io.pockethive.hivewatch.service.api.TargetAdapterTypeDto;
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import io.pockethive.hivewatch.service.environments.EnvironmentEntity;
 import io.pockethive.hivewatch.service.environments.EnvironmentRepository;
 import io.pockethive.hivewatch.service.environments.servers.ServerEntity;
@@ -82,7 +81,7 @@ class ProvisioningPlanValidationServiceTest {
                         null,
                         "Touchpoint",
                         List.of(new ProvisioningTomcatTargetDto(
-                                TomcatRole.PAYMENTS,
+                                "PAYMENTS",
                                 TargetAdapterTypeDto.TOMCAT_MANAGER_HTML,
                                 "http://nft03-tomcats.internal/manager/html",
                                 8081,
@@ -119,8 +118,8 @@ class ProvisioningPlanValidationServiceTest {
                         null,
                         "Touchpoint",
                         List.of(
-                                tomcat(TomcatRole.PAYMENTS, 8081),
-                                tomcat(TomcatRole.PAYMENTS, 8082)
+                                tomcat("PAYMENTS", 8081),
+                                tomcat("PAYMENTS", 8082)
                         ),
                         List.of(),
                         noTomcatExpectedChanges(),
@@ -147,7 +146,7 @@ class ProvisioningPlanValidationServiceTest {
         when(tomcatTargetRepository.findByServerIdIn(List.of(serverId))).thenReturn(List.of(new TomcatTargetEntity(
                 UUID.randomUUID(),
                 serverId,
-                TomcatRole.PAYMENTS,
+                "PAYMENTS",
                 "http://nft01-tomcats.internal",
                 8081,
                 "hc-manager",
@@ -168,7 +167,7 @@ class ProvisioningPlanValidationServiceTest {
                         ProvisioningChangeModeDto.EXISTING,
                         serverId,
                         "Touchpoint",
-                        List.of(tomcat(TomcatRole.PAYMENTS, 8084)),
+                        List.of(tomcat("PAYMENTS", 8084)),
                         List.of(),
                         noTomcatExpectedChanges(),
                         noDockerExpectedChanges()
@@ -196,12 +195,12 @@ class ProvisioningPlanValidationServiceTest {
                         ProvisioningChangeModeDto.CREATE,
                         null,
                         "Touchpoint",
-                        List.of(tomcat(TomcatRole.PAYMENTS, 8081)),
+                        List.of(tomcat("PAYMENTS", 8081)),
                         List.of(),
                         new ProvisioningTomcatExpectedWebappsDto(
                                 ProvisioningExpectedSetChangeModeDto.REPLACE,
                                 List.of(new ProvisioningTomcatExpectedWebappsSpecDto(
-                                        TomcatRole.PAYMENTS,
+                                        "PAYMENTS",
                                         ExpectedSetMode.EXPLICIT,
                                         null,
                                         List.of("/payments")
@@ -232,12 +231,12 @@ class ProvisioningPlanValidationServiceTest {
                         ProvisioningChangeModeDto.CREATE,
                         null,
                         "Touchpoint",
-                        List.of(tomcat(TomcatRole.PAYMENTS, 8081)),
+                        List.of(tomcat("PAYMENTS", 8081)),
                         List.of(),
                         new ProvisioningTomcatExpectedWebappsDto(
                                 ProvisioningExpectedSetChangeModeDto.REPLACE,
                                 List.of(new ProvisioningTomcatExpectedWebappsSpecDto(
-                                        TomcatRole.AUTH,
+                                        "AUTH",
                                         ExpectedSetMode.EXPLICIT,
                                         null,
                                         List.of("payments", "/manager")
@@ -269,9 +268,9 @@ class ProvisioningPlanValidationServiceTest {
                         ProvisioningChangeModeDto.CREATE,
                         null,
                         "Touchpoint",
-                        List.of(tomcat(TomcatRole.PAYMENTS, 8081)),
+                        List.of(tomcat("PAYMENTS", 8081)),
                         List.of(new ProvisioningActuatorTargetDto(
-                                TomcatRole.PAYMENTS,
+                                "PAYMENTS",
                                 TargetAdapterTypeDto.ACTUATOR_HTTP,
                                 "http://nft03-services.internal",
                                 8080,
@@ -299,7 +298,7 @@ class ProvisioningPlanValidationServiceTest {
         );
     }
 
-    private static ProvisioningTomcatTargetDto tomcat(TomcatRole role, int port) {
+    private static ProvisioningTomcatTargetDto tomcat(String role, int port) {
         return new ProvisioningTomcatTargetDto(
                 role,
                 TargetAdapterTypeDto.TOMCAT_MANAGER_HTML,

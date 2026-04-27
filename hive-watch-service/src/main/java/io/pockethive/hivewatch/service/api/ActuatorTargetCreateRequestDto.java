@@ -4,7 +4,7 @@ import java.util.UUID;
 
 public record ActuatorTargetCreateRequestDto(
         UUID serverId,
-        TomcatRole role,
+        String role,
         String baseUrl,
         int port,
         String profile,

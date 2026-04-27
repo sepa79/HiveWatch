@@ -11,6 +11,8 @@ import io.pockethive.hivewatch.service.expectedsets.docker.DockerExpectedService
 import io.pockethive.hivewatch.service.expectedsets.docker.DockerExpectedServiceSpecRepository;
 import io.pockethive.hivewatch.service.expectedsets.tomcat.TomcatExpectedWebappSpecEntity;
 import io.pockethive.hivewatch.service.expectedsets.tomcat.TomcatExpectedWebappSpecRepository;
+import io.pockethive.hivewatch.service.targetroles.EnvironmentTargetRoleEntity;
+import io.pockethive.hivewatch.service.targetroles.EnvironmentTargetRoleRepository;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetEntity;
 import io.pockethive.hivewatch.service.tomcat.TomcatTargetRepository;
 import io.pockethive.hivewatch.service.tomcat.expected.TomcatExpectedWebappEntity;
@@ -37,6 +39,7 @@ public class EnvironmentCloneService {
     private final TomcatExpectedWebappRepository tomcatExpectedWebappRepository;
     private final DockerExpectedServiceSpecRepository dockerExpectedServiceSpecRepository;
     private final DockerExpectedServiceRepository dockerExpectedServiceRepository;
+    private final EnvironmentTargetRoleRepository targetRoleRepository;
 
     public EnvironmentCloneService(
             EnvironmentRepository environmentRepository,
@@ -46,7 +49,8 @@ public class EnvironmentCloneService {
             TomcatExpectedWebappSpecRepository tomcatExpectedWebappSpecRepository,
             TomcatExpectedWebappRepository tomcatExpectedWebappRepository,
             DockerExpectedServiceSpecRepository dockerExpectedServiceSpecRepository,
-            DockerExpectedServiceRepository dockerExpectedServiceRepository
+            DockerExpectedServiceRepository dockerExpectedServiceRepository,
+            EnvironmentTargetRoleRepository targetRoleRepository
     ) {
         this.environmentRepository = environmentRepository;
         this.serverRepository = serverRepository;
@@ -56,6 +60,7 @@ public class EnvironmentCloneService {
         this.tomcatExpectedWebappRepository = tomcatExpectedWebappRepository;
         this.dockerExpectedServiceSpecRepository = dockerExpectedServiceSpecRepository;
         this.dockerExpectedServiceRepository = dockerExpectedServiceRepository;
+        this.targetRoleRepository = targetRoleRepository;
     }
 
     @Transactional
@@ -81,6 +86,21 @@ public class EnvironmentCloneService {
         List<UUID> sourceServerIds = sourceServers.stream().map(ServerEntity::getId).toList();
 
         Instant now = Instant.now();
+
+        List<EnvironmentTargetRoleEntity> sourceRoles = targetRoleRepository.findByEnvironmentId(sourceEnvironmentId);
+        targetRoleRepository.deleteByEnvironmentId(targetEnvironmentId);
+        targetRoleRepository.saveAll(sourceRoles.stream()
+                .map(r -> new EnvironmentTargetRoleEntity(
+                        UUID.randomUUID(),
+                        targetEnvironmentId,
+                        r.getCode(),
+                        r.getLabel(),
+                        r.getSortOrder(),
+                        r.isActive(),
+                        now
+                ))
+                .toList());
+
         Map<UUID, UUID> serverIdMap = new HashMap<>();
         List<ServerEntity> clonedServers = sourceServers.stream()
                 .map(s -> {
@@ -183,4 +203,3 @@ public class EnvironmentCloneService {
         );
     }
 }
-

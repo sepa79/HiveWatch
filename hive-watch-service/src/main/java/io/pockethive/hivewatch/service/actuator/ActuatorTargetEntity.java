@@ -1,10 +1,7 @@
 package io.pockethive.hivewatch.service.actuator;
 
-import io.pockethive.hivewatch.service.api.TomcatRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -19,9 +16,8 @@ public class ActuatorTargetEntity {
     @Column(name = "server_id", nullable = false)
     private UUID serverId;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false)
-    private TomcatRole role;
+    private String role;
 
     @Column(name = "base_url", nullable = false)
     private String baseUrl;
@@ -47,7 +43,7 @@ public class ActuatorTargetEntity {
     public ActuatorTargetEntity(
             UUID id,
             UUID serverId,
-            TomcatRole role,
+            String role,
             String baseUrl,
             int port,
             String profile,
@@ -74,7 +70,7 @@ public class ActuatorTargetEntity {
         return serverId;
     }
 
-    public TomcatRole getRole() {
+    public String getRole() {
         return role;
     }
 
@@ -102,4 +98,3 @@ public class ActuatorTargetEntity {
         return createdAt;
     }
 }
-

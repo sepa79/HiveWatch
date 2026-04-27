@@ -1,7 +1,7 @@
 package io.pockethive.hivewatch.service.api;
 
 public record ProvisioningActuatorTargetDto(
-        TomcatRole role,
+        String role,
         TargetAdapterTypeDto adapterType,
         String baseUrl,
         int port,
