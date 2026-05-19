@@ -1,0 +1,38 @@
+- name: Inspect HiveWatch Docker network
+  ansible.builtin.command:
+    cmd: docker network inspect {{ hivewatch_network }} --format '{{ "{{" }}.Driver{{ "}}" }}'
+  register: hivewatch_network_driver
+  changed_when: false
+  failed_when: false
+
+- name: Reject incompatible HiveWatch Docker network for Compose profile
+  ansible.builtin.assert:
+    that:
+      - hivewatch_network_driver.stdout == 'bridge'
+    fail_msg: "Docker network {{ hivewatch_network }} exists but is not a bridge network required by Compose profiles."
+  when:
+    - hivewatch_network_driver.rc == 0
+    - not hivewatch_swarm_profile
+
+- name: Reject incompatible HiveWatch Docker network for Swarm profile
+  ansible.builtin.assert:
+    that:
+      - hivewatch_network_driver.stdout == 'overlay'
+    fail_msg: "Docker network {{ hivewatch_network }} exists but is not an overlay network required by Swarm profiles."
+  when:
+    - hivewatch_network_driver.rc == 0
+    - hivewatch_swarm_profile
+
+- name: Create HiveWatch Compose Docker network
+  ansible.builtin.command:
+    cmd: docker network create {{ hivewatch_network }}
+  when:
+    - hivewatch_network_driver.rc != 0
+    - not hivewatch_swarm_profile
+
+- name: Create HiveWatch Swarm Docker network
+  ansible.builtin.command:
+    cmd: docker network create --driver overlay --attachable {{ hivewatch_network }}
+  when:
+    - hivewatch_network_driver.rc != 0
+    - hivewatch_swarm_profile

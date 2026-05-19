@@ -9,6 +9,7 @@
     hivewatch_compose_file: "{{ hivewatch_runtime_dir }}/docker-compose.yml"
     hivewatch_network: hivewatch-dev
     hivewatch_compose_project: hivewatch-poc
+    hivewatch_stack_name: hivewatch-poc
     hivewatch_http_port: "{{ lookup('ansible.builtin.env', 'HW_HTTP_PORT') }}"
     hiveforge_profile: "{{ lookup('ansible.builtin.env', 'HIVEFORGE_PROFILE') }}"
     hivewatch_service_image_tag: "{{ lookup('ansible.builtin.env', 'HIVEWATCH_SERVICE_IMAGE_TAG') }}"
@@ -32,23 +33,28 @@
       ansible.builtin.command:
         cmd: docker compose version
       changed_when: false
+      when: not hivewatch_swarm_profile
+
+    - name: Check Docker Swarm access
+      ansible.builtin.command:
+        cmd: docker node ls --format '{{ "{{" }}.Hostname{{ "}}" }}'
+      changed_when: false
+      when: hivewatch_swarm_profile
 
     - name: Render HiveWatch Compose file
       ansible.builtin.import_tasks: tasks/render-compose.yml
 
     - name: Ensure HiveWatch Docker network exists
-      ansible.builtin.command:
-        cmd: docker network inspect {{ hivewatch_network }}
-      register: hivewatch_network_inspect
-      changed_when: false
-      failed_when: false
-
-    - name: Create HiveWatch Docker network
-      ansible.builtin.command:
-        cmd: docker network create {{ hivewatch_network }}
-      when: hivewatch_network_inspect.rc != 0
+      ansible.builtin.import_tasks: tasks/ensure-network.yml
 
     - name: Deploy HiveWatch POC stack from GHCR images
       ansible.builtin.command:
         cmd: docker compose --project-name {{ hivewatch_compose_project }} -f {{ hivewatch_compose_file }} up -d --remove-orphans
         chdir: "{{ hivewatch_runtime_dir }}"
+      when: not hivewatch_swarm_profile
+
+    - name: Deploy HiveWatch POC Swarm stack from GHCR images
+      ansible.builtin.command:
+        cmd: docker stack deploy --with-registry-auth --compose-file {{ hivewatch_compose_file }} {{ hivewatch_stack_name }}
+        chdir: "{{ hivewatch_runtime_dir }}"
+      when: hivewatch_swarm_profile

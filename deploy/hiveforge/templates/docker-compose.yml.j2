@@ -9,21 +9,40 @@ services:
       - hivewatch-postgres-data:/var/lib/postgresql/data
     networks:
       - hivewatch-dev
+{% if hivewatch_swarm_profile %}
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == {{ lookup('ansible.builtin.env', 'HIVEWATCH_SWARM_NODE') }}
+{% endif %}
 
   hive-watch-service:
     image: ghcr.io/sepa79/hivewatch-service:{{ hivewatch_service_image_tag }}
     depends_on:
       - postgres
     ports:
+{% if hivewatch_swarm_profile %}
+      - target: 8080
+        published: {{ hivewatch_http_port }}
+        protocol: tcp
+        mode: host
+{% else %}
       - "{{ hivewatch_http_port }}:8080"
+{% endif %}
     environment:
-      HW_DB_URL: jdbc:postgresql://postgres:5432/hive_watch
+      HW_DB_URL: jdbc:postgresql://{{ hivewatch_postgres_host }}:5432/hive_watch
       HW_DB_USER: hive_watch
       HW_DB_PASSWORD: hive_watch
     networks:
       - hivewatch-dev
+{% if hivewatch_swarm_profile %}
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == {{ lookup('ansible.builtin.env', 'HIVEWATCH_SWARM_NODE') }}
+{% endif %}
 
-{% if hiveforge_profile == 'test' %}
+{% if hivewatch_test_profile %}
   nft-01-touchpoint-tomcats:
     image: ghcr.io/sepa79/hivewatch-dummy-tomcat-multi:{{ hivewatch_dummy_image_tag }}
     environment:

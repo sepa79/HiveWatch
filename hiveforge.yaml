@@ -29,6 +29,26 @@ project:
           required: true
           shared: false
           node: local-docker
+    - id: swarm-marax-normal
+      runtime: docker-swarm
+      serviceSet: normal
+      requires:
+        managedRoot:
+          required: true
+          shared: false
+          node: Marax
+        capabilities:
+          - placement
+    - id: swarm-proxmox-mgr1-normal
+      runtime: docker-swarm
+      serviceSet: normal
+      requires:
+        managedRoot:
+          required: true
+          shared: false
+          node: docker-swarm-mgr-1
+        capabilities:
+          - placement
 components:
   - name: service
     manifest: hivewatch-service.hiveforge.yaml
