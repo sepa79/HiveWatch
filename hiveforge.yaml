@@ -1,0 +1,34 @@
+kind: project
+project:
+  name: hivewatch
+  repository: https://github.com/sepa79/HiveWatch.git
+  actions:
+    - deploy
+    - remove
+    - purge
+    - update
+    - upgrade
+  vars:
+    imageRepository.project: ghcr.io/sepa79
+    extRepository.docker: docker.io
+    extRepository.ghcr: ghcr.io
+  profiles:
+    - id: normal
+      runtime: docker-single
+      serviceSet: normal
+      requires:
+        managedRoot:
+          required: true
+          shared: false
+          node: local-docker
+    - id: test
+      runtime: docker-single
+      serviceSet: test
+      requires:
+        managedRoot:
+          required: true
+          shared: false
+          node: local-docker
+components:
+  - name: service
+    manifest: hivewatch-service.hiveforge.yaml

@@ -1,0 +1,23 @@
+- name: Check HiveWatch Compose template
+  ansible.builtin.stat:
+    path: "{{ hivewatch_compose_template }}"
+  register: hivewatch_compose_template_stat
+
+- name: Require HiveWatch Compose template
+  ansible.builtin.assert:
+    that:
+      - hivewatch_compose_template_stat.stat.exists
+      - hivewatch_compose_template_stat.stat.isreg
+    fail_msg: "HiveWatch Compose template is missing: {{ hivewatch_compose_template }}"
+
+- name: Ensure HiveWatch runtime directory exists
+  ansible.builtin.file:
+    path: "{{ hivewatch_runtime_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Render HiveWatch Compose file
+  ansible.builtin.template:
+    src: "{{ hivewatch_compose_template }}"
+    dest: "{{ hivewatch_compose_file }}"
+    mode: "0644"

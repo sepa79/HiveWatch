@@ -1,0 +1,23 @@
+- name: Require explicit HIVEFORGE_PROFILE
+  ansible.builtin.assert:
+    that:
+      - hiveforge_profile | length > 0
+    fail_msg: "HIVEFORGE_PROFILE must be set explicitly for HiveWatch POC."
+
+- name: Require supported HiveWatch profile
+  ansible.builtin.assert:
+    that:
+      - hiveforge_profile in ['normal', 'test']
+    fail_msg: "Unsupported HIVEFORGE_PROFILE for HiveWatch POC: {{ hiveforge_profile }}"
+
+- name: Require explicit HiveWatch service image tag
+  ansible.builtin.assert:
+    that:
+      - hivewatch_service_image_tag | length > 0
+    fail_msg: "HIVEWATCH_SERVICE_IMAGE_TAG must be set explicitly for HiveWatch POC."
+
+- name: Require explicit HiveWatch dummy image tag
+  ansible.builtin.assert:
+    that:
+      - hivewatch_dummy_image_tag | length > 0
+    fail_msg: "HIVEWATCH_DUMMY_IMAGE_TAG must be set explicitly for HiveWatch POC."
