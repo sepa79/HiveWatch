@@ -15,9 +15,3 @@ deployment:
       playbook: deploy/hiveforge/update.yml
     upgrade:
       playbook: deploy/hiveforge/upgrade.yml
-requirements:
-  environment:
-    - HW_HTTP_PORT
-    - HIVEFORGE_PROFILE
-    - HIVEWATCH_SERVICE_IMAGE_TAG
-    - HIVEWATCH_DUMMY_IMAGE_TAG

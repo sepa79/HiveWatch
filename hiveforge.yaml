@@ -13,42 +13,27 @@ project:
     extRepository.docker: docker.io
     extRepository.ghcr: ghcr.io
   profiles:
-    - id: normal
+    - id: docker-single
       runtime: docker-single
       serviceSet: normal
       requires:
         managedRoot:
           required: true
-          shared: false
-          node: local-docker
-    - id: test
+          shared: true
+    - id: docker-single-test
       runtime: docker-single
       serviceSet: test
       requires:
         managedRoot:
           required: true
-          shared: false
-          node: local-docker
-    - id: swarm-marax-normal
+          shared: true
+    - id: docker-swarm
       runtime: docker-swarm
       serviceSet: normal
       requires:
         managedRoot:
           required: true
-          shared: false
-          node: Marax
-        capabilities:
-          - placement
-    - id: swarm-proxmox-mgr1-normal
-      runtime: docker-swarm
-      serviceSet: normal
-      requires:
-        managedRoot:
-          required: true
-          shared: false
-          node: docker-swarm-mgr-1
-        capabilities:
-          - placement
+          shared: true
 components:
   - name: service
     manifest: hivewatch-service.hiveforge.yaml

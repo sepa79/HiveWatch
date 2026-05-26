@@ -7,36 +7,11 @@
 - name: Require supported HiveWatch profile
   ansible.builtin.assert:
     that:
-      - hiveforge_profile in ['normal', 'test', 'swarm-marax-normal', 'swarm-proxmox-mgr1-normal']
+      - hiveforge_profile in ['docker-single', 'docker-single-test', 'docker-swarm']
     fail_msg: "Unsupported HIVEFORGE_PROFILE for HiveWatch POC: {{ hiveforge_profile }}"
 
 - name: Derive HiveWatch runtime profile flags
   ansible.builtin.set_fact:
-    hivewatch_swarm_profile: "{{ hiveforge_profile in ['swarm-marax-normal', 'swarm-proxmox-mgr1-normal'] }}"
-    hivewatch_test_profile: "{{ hiveforge_profile == 'test' }}"
-    hivewatch_postgres_host: "{{ 'tasks.postgres' if hiveforge_profile in ['swarm-marax-normal', 'swarm-proxmox-mgr1-normal'] else 'postgres' }}"
-    hivewatch_expected_swarm_node: >-
-      {{ {
-        'swarm-marax-normal': 'Marax',
-        'swarm-proxmox-mgr1-normal': 'docker-swarm-mgr-1'
-      }.get(hiveforge_profile, '') }}
-
-- name: Require explicit HiveWatch Swarm node for Swarm profiles
-  ansible.builtin.assert:
-    that:
-      - lookup('ansible.builtin.env', 'HIVEWATCH_SWARM_NODE') | length > 0
-      - lookup('ansible.builtin.env', 'HIVEWATCH_SWARM_NODE') == hivewatch_expected_swarm_node
-    fail_msg: "HIVEWATCH_SWARM_NODE must be set to {{ hivewatch_expected_swarm_node }} for profile {{ hiveforge_profile }}."
-  when: hivewatch_swarm_profile
-
-- name: Require explicit HiveWatch service image tag
-  ansible.builtin.assert:
-    that:
-      - hivewatch_service_image_tag | length > 0
-    fail_msg: "HIVEWATCH_SERVICE_IMAGE_TAG must be set explicitly for HiveWatch POC."
-
-- name: Require explicit HiveWatch dummy image tag
-  ansible.builtin.assert:
-    that:
-      - hivewatch_dummy_image_tag | length > 0
-    fail_msg: "HIVEWATCH_DUMMY_IMAGE_TAG must be set explicitly for HiveWatch POC."
+    hivewatch_swarm_profile: "{{ hiveforge_profile == 'docker-swarm' }}"
+    hivewatch_test_profile: "{{ hiveforge_profile == 'docker-single-test' }}"
+    hivewatch_postgres_host: "{{ 'tasks.postgres' if hiveforge_profile == 'docker-swarm' else 'postgres' }}"
