@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 - 2026-05-26
+
+- Added Docker default-network aliases for HiveWatch dummy services so seeded
+  test targets resolve without requiring a project-owned external network.
+
 ## 0.1.1 - 2026-05-26
 
 - Replaced environment-specific HiveForge Swarm profiles with portable
