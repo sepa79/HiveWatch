@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3 - 2026-06-05
+
+- Changed the default published HiveWatch HTTP port from `18180` to `4020`
+  across local Compose, HiveForge defaults, README guidance, and MCP tooling.
+
 ## 0.1.2 - 2026-05-26
 
 - Added Docker default-network aliases for HiveWatch dummy services so seeded

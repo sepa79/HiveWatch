@@ -27,7 +27,7 @@ export HIVEWATCH_BEARER_TOKEN="..."
 For local development only:
 
 ```bash
-export HIVEWATCH_API_BASE_URL="http://localhost:18180"
+export HIVEWATCH_API_BASE_URL="http://localhost:4020"
 export HIVEWATCH_DEV_USERNAME="local-admin"
 ```
 

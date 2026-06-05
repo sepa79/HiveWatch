@@ -10,7 +10,7 @@ tools/e2e/hivewatch_mcp_target_roles_e2e.py
 
 Prerequisites:
 
-- HiveWatch app stack is running at `http://localhost:18180`.
+- HiveWatch app stack is running at `http://localhost:4020`.
 - Dummy stack is running.
 - Dev-header auth accepts `local-admin`.
 - Postgres container is named `hivewatch-postgres`.

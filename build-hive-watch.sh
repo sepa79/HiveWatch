@@ -159,6 +159,6 @@ else
   docker compose up -d
 fi
 
-HOST_PORT="${HW_HTTP_PORT:-18180}"
+HOST_PORT="${HW_HTTP_PORT:-4020}"
 echo "UI: http://localhost:${HOST_PORT}/"
 echo "Health: http://localhost:${HOST_PORT}/actuator/health"

@@ -21,7 +21,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_API_BASE_URL = "http://localhost:18180"
+DEFAULT_API_BASE_URL = "http://localhost:4020"
 DEFAULT_DEV_USERNAME = "local-admin"
 POSTGRES_CONTAINER = "hivewatch-postgres"
 DUMMY_COMPOSE_FILE = REPO_ROOT / "dummy-stack" / "docker-compose.dummy-stack.yml"

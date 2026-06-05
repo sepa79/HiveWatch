@@ -19,9 +19,9 @@ Prereqs: Docker + Docker Compose v2.
 ```
 
 Open:
-- UI: `http://localhost:18180/`
-- Dashboard: `http://localhost:18180/dashboard`
-- Matrix: `http://localhost:18180/dashboard/matrix`
+- UI: `http://localhost:4020/`
+- Dashboard: `http://localhost:4020/dashboard`
+- Matrix: `http://localhost:4020/dashboard/matrix`
 
 Auth (dev mode): UI sends `X-HW-Username` header from local storage.
 Seeded users:
@@ -64,7 +64,7 @@ HiveWatch declares three portable HiveForge profiles:
 - `docker-single-test` - `docker-single` plus the dummy Tomcat and actuator stack.
 - `docker-swarm` - HiveWatch service and PostgreSQL on Docker Swarm.
 
-HiveWatch's example deployment publishes HTTP on port `18180` and uses the
+HiveWatch's example deployment publishes HTTP on port `4020` and uses the
 `latest` GHCR image tags declared by the project playbooks. The selected
 HiveForge profile is an action parameter; HiveForge passes it to the playbooks
 as `HIVEFORGE_PROFILE`.

@@ -19,7 +19,7 @@ import urllib.request
 from typing import Any
 
 
-DEFAULT_API_BASE_URL = "http://localhost:18180"
+DEFAULT_API_BASE_URL = "http://localhost:4020"
 
 
 TOOLS: list[dict[str, Any]] = [

@@ -77,7 +77,7 @@ Dummy stack:
 Default API base URL:
 
 ```text
-http://localhost:18180
+http://localhost:4020
 ```
 
 Default dev user header:

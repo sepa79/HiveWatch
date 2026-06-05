@@ -9,7 +9,7 @@
     hivewatch_compose_file: "{{ hivewatch_runtime_dir }}/docker-compose.yml"
     hivewatch_compose_project: hivewatch-poc
     hivewatch_stack_name: hivewatch-poc
-    hivewatch_http_port: "18180"
+    hivewatch_http_port: "4020"
     hiveforge_profile: "{{ lookup('ansible.builtin.env', 'HIVEFORGE_PROFILE') }}"
     hivewatch_service_image_tag: latest
     hivewatch_dummy_image_tag: latest

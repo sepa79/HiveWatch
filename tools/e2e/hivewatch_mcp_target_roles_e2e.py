@@ -3,7 +3,7 @@
 End-to-end smoke test for HiveWatch target roles through MCP.
 
 Prerequisites:
-- Main HiveWatch stack is running at http://localhost:18180.
+- Main HiveWatch stack is running at http://localhost:4020.
 - Local dev-header auth is enabled for user local-admin.
 - Postgres container is named hivewatch-postgres.
 
