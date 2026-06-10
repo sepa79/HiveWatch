@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4 - 2026-06-10
+
+- Updated the HiveForge deployment contract to `0.5`.
+- Changed HiveForge deploy, update, and upgrade playbooks to render only the
+  Compose file declared by `HIVEFORGE_RENDERED_COMPOSE_FILE`; HiveForge now owns
+  Docker execution.
+- Changed HiveForge remove and purge playbooks to fail explicitly until
+  HiveForge provides owner-side Docker remove and purge operations.
+
 ## 0.1.3 - 2026-06-05
 
 - Changed the default published HiveWatch HTTP port from `18180` to `4020`

@@ -4,11 +4,8 @@
   gather_facts: false
   vars:
     hivewatch_repo_root: "{{ playbook_dir }}/../.."
-    hivewatch_runtime_dir: "{{ hivewatch_repo_root }}/.hiveforge"
     hivewatch_compose_template: "{{ playbook_dir }}/templates/docker-compose.yml.j2"
-    hivewatch_compose_file: "{{ hivewatch_runtime_dir }}/docker-compose.yml"
-    hivewatch_compose_project: hivewatch-poc
-    hivewatch_stack_name: hivewatch-poc
+    hivewatch_compose_file: "{{ lookup('ansible.builtin.env', 'HIVEFORGE_RENDERED_COMPOSE_FILE') }}"
     hivewatch_http_port: "4020"
     hiveforge_profile: "{{ lookup('ansible.builtin.env', 'HIVEFORGE_PROFILE') }}"
     hivewatch_service_image_tag: latest
@@ -23,45 +20,5 @@
     - name: Validate HiveWatch profile
       ansible.builtin.import_tasks: tasks/validate-profile.yml
 
-    - name: Check Docker CLI access
-      ansible.builtin.command:
-        cmd: docker version --format '{{ "{{" }}.Server.Version{{ "}}" }}'
-      changed_when: false
-
-    - name: Check Docker Compose plugin
-      ansible.builtin.command:
-        cmd: docker compose version
-      changed_when: false
-      when: not hivewatch_swarm_profile
-
-    - name: Check Docker Swarm access
-      ansible.builtin.command:
-        cmd: docker node ls --format '{{ "{{" }}.Hostname{{ "}}" }}'
-      changed_when: false
-      when: hivewatch_swarm_profile
-
     - name: Render HiveWatch Compose file
       ansible.builtin.import_tasks: tasks/render-compose.yml
-
-    - name: Pull HiveWatch POC images for upgrade
-      ansible.builtin.command:
-        cmd: docker compose --project-name {{ hivewatch_compose_project }} -f {{ hivewatch_compose_file }} pull
-        chdir: "{{ hivewatch_runtime_dir }}"
-      when: not hivewatch_swarm_profile
-
-    - name: Pull HiveWatch service image for Swarm upgrade
-      ansible.builtin.command:
-        cmd: docker pull ghcr.io/sepa79/hivewatch-service:{{ hivewatch_service_image_tag }}
-      when: hivewatch_swarm_profile
-
-    - name: Reconcile HiveWatch POC stack after upgrade
-      ansible.builtin.command:
-        cmd: docker compose --project-name {{ hivewatch_compose_project }} -f {{ hivewatch_compose_file }} up -d --remove-orphans
-        chdir: "{{ hivewatch_runtime_dir }}"
-      when: not hivewatch_swarm_profile
-
-    - name: Reconcile HiveWatch POC Swarm stack after upgrade
-      ansible.builtin.command:
-        cmd: docker stack deploy --with-registry-auth --compose-file {{ hivewatch_compose_file }} {{ hivewatch_stack_name }}
-        chdir: "{{ hivewatch_runtime_dir }}"
-      when: hivewatch_swarm_profile

@@ -71,19 +71,30 @@ as `HIVEFORGE_PROFILE`.
 
 The rendered Compose file uses Docker-managed default networking. Compose
 profiles get a Compose project network, and Swarm profiles get a stack network.
-HiveForge only runs the project playbooks; Docker owns network creation and
-removal.
+HiveForge runs the project playbooks in render-only mode, then HiveForge owns
+Docker execution, network creation, and removal.
 
-The deploy action runs `deploy/hiveforge/deploy.yml`, verifies Docker access, renders `deploy/hiveforge/templates/docker-compose.yml.j2` into `.hiveforge/docker-compose.yml`, and starts the rendered stack. Compose profiles use the explicit Docker Compose project `hivewatch-poc`; Swarm profiles use the explicit Docker stack `hivewatch-poc`.
+The deploy action runs `deploy/hiveforge/deploy.yml`, renders
+`deploy/hiveforge/templates/docker-compose.yml.j2` into the file declared by
+`HIVEFORGE_RENDERED_COMPOSE_FILE`, validates the rendered Compose file, and then
+HiveForge starts the rendered stack.
 
 Swarm profiles publish the HiveWatch HTTP port through Swarm ingress and connect
 the service to PostgreSQL through `tasks.postgres`. The profile is intentionally
 not pinned to a concrete Swarm node.
 
-The remove action renders the Compose template, then stops/removes the `hivewatch-poc` Compose project or Swarm stack without deleting Docker volumes.
+The remove action fails explicitly until HiveForge provides owner-side Docker
+remove execution. Project Ansible does not have Docker access in the HiveForge
+`0.5` contract.
 
-The purge action renders the Compose template and removes the `hivewatch-poc` Compose project or Swarm stack including Docker volumes. Swarm purge waits for stack removal before deleting the stack-scoped PostgreSQL volume.
+The purge action fails explicitly until HiveForge provides owner-side Docker
+purge execution. Project Ansible does not have Docker access in the HiveForge
+`0.5` contract.
 
-The update action renders the Compose template, pulls the currently declared images, and reconciles the Compose project or Swarm stack without deleting volumes.
+The update action renders the Compose template into
+`HIVEFORGE_RENDERED_COMPOSE_FILE`; HiveForge reconciles the stack without
+deleting volumes.
 
-The upgrade action renders the Compose template, requires explicit upgrade approval, pulls the declared images, and reconciles the Compose project or Swarm stack.
+The upgrade action renders the Compose template into
+`HIVEFORGE_RENDERED_COMPOSE_FILE` after explicit upgrade approval; HiveForge
+reconciles the stack.

@@ -2,70 +2,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  vars:
-    hivewatch_repo_root: "{{ playbook_dir }}/../.."
-    hivewatch_runtime_dir: "{{ hivewatch_repo_root }}/.hiveforge"
-    hivewatch_compose_template: "{{ playbook_dir }}/templates/docker-compose.yml.j2"
-    hivewatch_compose_file: "{{ hivewatch_runtime_dir }}/docker-compose.yml"
-    hivewatch_compose_project: hivewatch-poc
-    hivewatch_stack_name: hivewatch-poc
-    hivewatch_http_port: "4020"
-    hiveforge_profile: "{{ lookup('ansible.builtin.env', 'HIVEFORGE_PROFILE') }}"
-    hivewatch_service_image_tag: latest
-    hivewatch_dummy_image_tag: latest
   tasks:
-    - name: Require explicit purge approval
-      ansible.builtin.assert:
-        that:
-          - lookup('ansible.builtin.env', 'HIVEFORGE_PURGE_APPROVED') == 'true'
-        fail_msg: "HIVEFORGE_PURGE_APPROVED=true must be set explicitly before purging HiveWatch POC data."
-
-    - name: Validate HiveWatch profile
-      ansible.builtin.import_tasks: tasks/validate-profile.yml
-
-    - name: Check Docker CLI access
-      ansible.builtin.command:
-        cmd: docker version --format '{{ "{{" }}.Server.Version{{ "}}" }}'
-      changed_when: false
-
-    - name: Check Docker Compose plugin
-      ansible.builtin.command:
-        cmd: docker compose version
-      changed_when: false
-      when: not hivewatch_swarm_profile
-
-    - name: Render HiveWatch Compose file
-      ansible.builtin.import_tasks: tasks/render-compose.yml
-
-    - name: Purge HiveWatch POC stack and volumes
-      ansible.builtin.command:
-        cmd: docker compose --project-name {{ hivewatch_compose_project }} -f {{ hivewatch_compose_file }} down -v --remove-orphans
-        chdir: "{{ hivewatch_runtime_dir }}"
-      when: not hivewatch_swarm_profile
-
-    - name: Purge HiveWatch POC Swarm stack
-      ansible.builtin.command:
-        cmd: docker stack rm {{ hivewatch_stack_name }}
-        chdir: "{{ hivewatch_runtime_dir }}"
-      when: hivewatch_swarm_profile
-
-    - name: Wait for HiveWatch POC Swarm stack removal
-      ansible.builtin.command:
-        cmd: docker stack ps {{ hivewatch_stack_name }} --format '{{ "{{" }}.Name{{ "}}" }}'
-      register: hivewatch_swarm_stack_ps
-      changed_when: false
-      failed_when: false
-      until: hivewatch_swarm_stack_ps.rc != 0 or hivewatch_swarm_stack_ps.stdout | length == 0
-      retries: 30
-      delay: 2
-      when: hivewatch_swarm_profile
-
-    - name: Purge HiveWatch POC Swarm postgres volume
-      ansible.builtin.command:
-        cmd: docker volume rm {{ hivewatch_stack_name }}_hivewatch-postgres-data
-      register: hivewatch_swarm_volume_rm
-      changed_when: hivewatch_swarm_volume_rm.rc == 0
-      failed_when:
-        - hivewatch_swarm_volume_rm.rc != 0
-        - "'No such volume' not in hivewatch_swarm_volume_rm.stderr"
-      when: hivewatch_swarm_profile
+    - name: Reject purge until HiveForge owns Docker purge execution
+      ansible.builtin.fail:
+        msg: "HiveWatch purge requires HiveForge-owned Docker purge execution; project Ansible has no Docker access in contract 0.5."
