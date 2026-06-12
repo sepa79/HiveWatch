@@ -75,26 +75,22 @@ HiveForge runs the project playbooks in render-only mode, then HiveForge owns
 Docker execution, network creation, and removal.
 
 The deploy action runs `deploy/hiveforge/deploy.yml`, renders
-`deploy/hiveforge/templates/docker-compose.yml.j2` into the file declared by
-`HIVEFORGE_RENDERED_COMPOSE_FILE`, validates the rendered Compose file, and then
+`deploy/hiveforge/templates/docker-compose.yml.j2` into
+`/hf/stacks/compose.yml`, validates the rendered Compose file, and then
 HiveForge starts the rendered stack.
 
 Swarm profiles publish the HiveWatch HTTP port through Swarm ingress and connect
 the service to PostgreSQL through `tasks.postgres`. The profile is intentionally
 not pinned to a concrete Swarm node.
 
-The remove action fails explicitly until HiveForge provides owner-side Docker
-remove execution. Project Ansible does not have Docker access in the HiveForge
-`0.5` contract.
+The remove action is HiveForge-owned. HiveForge removes the recorded Docker
+Compose project or Swarm stack without running project Ansible.
 
-The purge action fails explicitly until HiveForge provides owner-side Docker
-purge execution. Project Ansible does not have Docker access in the HiveForge
-`0.5` contract.
+The purge action is HiveForge-owned. HiveForge removes the recorded Docker
+Compose project or Swarm stack without running project Ansible.
 
-The update action renders the Compose template into
-`HIVEFORGE_RENDERED_COMPOSE_FILE`; HiveForge reconciles the stack without
-deleting volumes.
+The update action renders the Compose template into `/hf/stacks/compose.yml`;
+HiveForge reconciles the stack without deleting volumes.
 
-The upgrade action renders the Compose template into
-`HIVEFORGE_RENDERED_COMPOSE_FILE` after explicit upgrade approval; HiveForge
-reconciles the stack.
+The upgrade action renders the Compose template into `/hf/stacks/compose.yml`
+after explicit upgrade approval; HiveForge reconciles the stack.

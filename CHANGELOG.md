@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Updated HiveForge deploy, update, and upgrade playbooks for the 0.5.2 action
+  root contract: project Ansible writes rendered Compose to
+  `/hf/stacks/compose.yml` instead of reading `HIVEFORGE_RENDERED_COMPOSE_FILE`.
+- Documented HiveForge-owned remove and purge execution for the current 0.5
+  contract.
+
 ## 0.1.4 - 2026-06-10
 
 - Updated the HiveForge deployment contract to `0.5`.

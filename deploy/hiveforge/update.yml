@@ -5,7 +5,7 @@
   vars:
     hivewatch_repo_root: "{{ playbook_dir }}/../.."
     hivewatch_compose_template: "{{ playbook_dir }}/templates/docker-compose.yml.j2"
-    hivewatch_compose_file: "{{ lookup('ansible.builtin.env', 'HIVEFORGE_RENDERED_COMPOSE_FILE') }}"
+    hivewatch_compose_file: /hf/stacks/compose.yml
     hivewatch_http_port: "4020"
     hiveforge_profile: "{{ lookup('ansible.builtin.env', 'HIVEFORGE_PROFILE') }}"
     hivewatch_service_image_tag: latest

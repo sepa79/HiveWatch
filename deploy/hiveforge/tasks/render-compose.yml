@@ -10,12 +10,6 @@
       - hivewatch_compose_template_stat.stat.isreg
     fail_msg: "HiveWatch Compose template is missing: {{ hivewatch_compose_template }}"
 
-- name: Require HiveForge rendered Compose file path
-  ansible.builtin.assert:
-    that:
-      - hivewatch_compose_file | length > 0
-    fail_msg: "HIVEFORGE_RENDERED_COMPOSE_FILE must be set explicitly by HiveForge."
-
 - name: Ensure HiveWatch rendered compose directory exists
   ansible.builtin.file:
     path: "{{ hivewatch_compose_file | dirname }}"
