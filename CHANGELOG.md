@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.5 - 2026-06-12
 
 - Updated HiveForge deploy, update, and upgrade playbooks for the 0.5.2 action
   root contract: project Ansible writes rendered Compose to
