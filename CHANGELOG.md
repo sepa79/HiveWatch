@@ -7,6 +7,8 @@
   `/hf/stacks/compose.yml` instead of reading `HIVEFORGE_RENDERED_COMPOSE_FILE`.
 - Documented HiveForge-owned remove and purge execution for the current 0.5
   contract.
+- Create a GitHub Release from version tags after the container image build
+  succeeds.
 
 ## 0.1.4 - 2026-06-10
 
